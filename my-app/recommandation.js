@@ -254,12 +254,6 @@ const RecommendationScreen = () => {
         <Text style={styles.sectionTitle}>Mindful Activities</Text>
         <MindfulActivitiesComponent selectedMood={selectedMood} />
         
-        <Text style={styles.sectionTitle}>Nearby Places</Text>
-        <View style={styles.placeholderBox}>
-          <Text style={styles.placeholderText}>
-            Recommended locations near you will be listed in this section.
-          </Text>
-        </View>
       </View>
     </ScrollView>
   );

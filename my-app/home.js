@@ -19,7 +19,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import * as Speech from 'expo-speech';
 import Voice from '@react-native-voice/voice';
 import { auth, db } from './firebase';
-import { collection, addDoc, query, where, orderBy, getDocs, deleteDoc } from 'firebase/firestore';
+import { ref, push, set, onValue, remove, query, orderByChild, equalTo } from 'firebase/database';
 import axios from 'axios';
 
 // You'll need to install: expo-linear-gradient, expo-speech, @react-native-voice/voice, axios
@@ -40,50 +40,83 @@ const HomeScreen = () => {
   // Replace with your actual Gemini API key
   const GEMINI_API_KEY = 'AIzaSyA9pusWPVjr2NOPwrEO6Ry-uUzJzfRb2d4';
   
-  // Initial bot message
+  // Initial bot message - only if no history exists
   useEffect(() => {
     if (showChatbot && chatHistory.length === 0) {
-      setChatHistory([
-        {
-          id: 'initial',
-          text: "How have you been doing lately?",
-          sender: 'bot',
-          timestamp: new Date().getTime()
-        }
-      ]);
+      const initialMessage = {
+        id: 'initial',
+        text: "How have you been doing lately?",
+        sender: 'bot',
+        timestamp: new Date().getTime()
+      };
+      setChatHistory([initialMessage]);
+      // Save initial message to database if no history exists
+      if (currentUser) {
+        const chatRef = ref(db, `chatHistory/${currentUser.uid}/${initialMessage.id}`);
+        set(chatRef, initialMessage);
+      }
     }
-  }, [showChatbot]);
+  }, [showChatbot, chatHistory.length, currentUser]);
 
   // Load chat history from Firebase when chatbot is opened
   useEffect(() => {
-    if (showChatbot) {
+    if (showChatbot && currentUser) {
       loadChatHistory();
     }
-  }, [showChatbot]);
+  }, [showChatbot, currentUser]);
 
   // Set up voice recognition
   useEffect(() => {
-    Voice.onSpeechStart = () => setIsListening(true);
-    Voice.onSpeechEnd = () => setIsListening(false);
-    Voice.onSpeechResults = (e) => {
+    function onSpeechStart() {
+      setIsListening(true);
+    }
+    
+    function onSpeechEnd() {
+      setIsListening(false);
+    }
+    
+    function onSpeechResults(e) {
       if (e.value && e.value[0]) {
         setMessage(e.value[0]);
       }
-    };
-    Voice.onSpeechError = (e) => {
-      console.error(e);
+    }
+    
+    function onSpeechError(e) {
+      console.error('Speech recognition error:', e);
       setIsListening(false);
+    }
+    
+    // Set up event listeners
+    Voice.onSpeechStart = onSpeechStart;
+    Voice.onSpeechEnd = onSpeechEnd;
+    Voice.onSpeechResults = onSpeechResults;
+    Voice.onSpeechError = onSpeechError;
+
+    // Initialize Voice
+    const initVoice = async () => {
+      try {
+        await Voice.isAvailable();
+        console.log('Voice recognition is available');
+      } catch (e) {
+        console.error('Voice recognition error:', e);
+      }
     };
 
+    initVoice();
+
     return () => {
-      Voice.destroy().then(Voice.removeAllListeners);
+      Voice.destroy().then(() => {
+        Voice.removeAllListeners();
+      });
     };
   }, []);
 
   // Scroll to bottom when chat updates
   useEffect(() => {
     if (flatListRef.current && chatHistory.length > 0) {
-      flatListRef.current.scrollToEnd({ animated: true });
+      setTimeout(() => {
+        flatListRef.current.scrollToEnd({ animated: true });
+      }, 100);
     }
   }, [chatHistory]);
 
@@ -92,34 +125,32 @@ const HomeScreen = () => {
     
     try {
       setLoading(true);
-      const chatQuery = query(
-        collection(db, 'chatHistory'),
-        where('userId', '==', currentUser.uid),
-        orderBy('timestamp', 'asc')
-      );
+      // Using Realtime Database query
+      const chatRef = ref(db, `chatHistory/${currentUser.uid}`);
       
-      const querySnapshot = await getDocs(chatQuery);
-      const chats = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      
-      if (chats.length > 0) {
-        setChatHistory(chats);
-      } else {
-        setChatHistory([
-          {
-            id: 'initial',
-            text: "How have you been doing lately?",
-            sender: 'bot',
-            timestamp: new Date().getTime()
-          }
-        ]);
-      }
+      onValue(chatRef, (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.val();
+          const messages = Object.values(data).sort((a, b) => a.timestamp - b.timestamp);
+          setChatHistory(messages);
+        } else {
+          // No chat history found
+          setChatHistory([
+            {
+              id: 'initial',
+              text: "How have you been doing lately?",
+              sender: 'bot',
+              timestamp: new Date().getTime()
+            }
+          ]);
+        }
+        setLoading(false);
+      }, {
+        onlyOnce: true
+      });
     } catch (error) {
       console.error("Error loading chat history:", error);
       Alert.alert("Error", "Failed to load chat history");
-    } finally {
       setLoading(false);
     }
   };
@@ -128,10 +159,9 @@ const HomeScreen = () => {
     if (!currentUser) return;
     
     try {
-      await addDoc(collection(db, 'chatHistory'), {
-        ...messageData,
-        userId: currentUser.uid,
-      });
+      // Using Realtime Database
+      const chatRef = ref(db, `chatHistory/${currentUser.uid}/${messageData.id}`);
+      await set(chatRef, messageData);
     } catch (error) {
       console.error("Error saving chat message:", error);
     }
@@ -141,24 +171,35 @@ const HomeScreen = () => {
     if (!currentUser) return;
     
     try {
+      console.log("Starting to clear chat history for user:", currentUser.uid);
       setLoading(true);
-      const chatQuery = query(
-        collection(db, 'chatHistory'),
-        where('userId', '==', currentUser.uid)
-      );
       
-      const querySnapshot = await getDocs(chatQuery);
-      const deletePromises = querySnapshot.docs.map(doc => deleteDoc(doc.ref));
-      await Promise.all(deletePromises);
+      // First, clear the local chat history state
+      console.log("Clearing local chat history state");
+      setChatHistory([]);
       
-      setChatHistory([
-        {
-          id: 'initial',
-          text: "How have you been doing lately?",
-          sender: 'bot',
-          timestamp: new Date().getTime()
-        }
-      ]);
+      // Then delete all chat messages from the database
+      console.log("Removing chat history from Firebase");
+      const chatRef = ref(db, `chatHistory/${currentUser.uid}`);
+      await remove(chatRef);
+      console.log("Successfully deleted chat history from Firebase");
+      
+      // Finally, add back the initial message
+      const initialMessage = {
+        id: 'initial',
+        text: "How have you been doing lately?",
+        sender: 'bot',
+        timestamp: new Date().getTime()
+      };
+      
+      console.log("Adding initial message back to chat");
+      setChatHistory([initialMessage]);
+      
+      // Save the initial message to database
+      const newChatRef = ref(db, `chatHistory/${currentUser.uid}/${initialMessage.id}`);
+      await set(newChatRef, initialMessage);
+      console.log("Chat history successfully cleared and reset");
+      
     } catch (error) {
       console.error("Error clearing chat history:", error);
       Alert.alert("Error", "Failed to clear chat history");
@@ -295,17 +336,22 @@ const HomeScreen = () => {
 
   const startListening = async () => {
     try {
+      await Voice.stop();
       await Voice.start('en-US');
+      console.log('Voice recognition started');
     } catch (e) {
-      console.error(e);
+      console.error('Error starting voice recognition:', e);
+      Alert.alert('Voice Error', 'Could not start voice recognition. Please try again.');
+      setIsListening(false);
     }
   };
 
   const stopListening = async () => {
     try {
       await Voice.stop();
+      console.log('Voice recognition stopped');
     } catch (e) {
-      console.error(e);
+      console.error('Error stopping voice recognition:', e);
     }
   };
 
@@ -412,16 +458,28 @@ const HomeScreen = () => {
               <Icon name="arrow-back" size={24} color="#fff" />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Mental Health Assistant</Text>
-            <TouchableOpacity onPress={() => {
-              Alert.alert(
-                "Clear Chat",
-                "Are you sure you want to clear all chat history?",
-                [
-                  { text: "Cancel", style: "cancel" },
-                  { text: "Clear", style: "destructive", onPress: clearChatHistory }
-                ]
-              );
-            }} style={styles.clearButton}>
+            <TouchableOpacity 
+              onPress={() => {
+                console.log("Delete button clicked");
+                clearChatHistory();
+                // Alert.alert(
+                //   "Clear Chat",
+                //   "Are you sure you want to clear all chat history?",
+                //   [
+                //     { text: "Cancel", style: "cancel" },
+                //     { 
+                //       text: "Clear", 
+                //       style: "destructive", 
+                //       onPress: () => {
+                //         console.log("User confirmed chat deletion");
+                //         clearChatHistory();
+                //       }
+                //     }
+                //   ]
+                // );
+              }} 
+              style={styles.clearButton}
+            >
               <Icon name="delete" size={24} color="#fff" />
             </TouchableOpacity>
           </View>
