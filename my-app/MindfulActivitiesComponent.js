@@ -424,15 +424,46 @@ const MindfulActivitiesComponent = ({ selectedMood }) => {
             onValue(userRef, (snapshot) => {
               if (snapshot.exists()) {
                 const userData = snapshot.val();
-                setUserStreak(userData.streak || 0);
+                
+                // Check if the streak should be maintained or reset
+                const lastCompletedDate = userData.lastCompletedDate;
+                const currentDate = new Date().toDateString();
+                const yesterday = new Date();
+                yesterday.setDate(yesterday.getDate() - 1);
+                const yesterdayString = yesterday.toDateString();
+                
+                let updatedStreak = userData.streak || 0;
+                
+                // If last activity was not yesterday or today, reset streak
+                if (lastCompletedDate !== yesterdayString && lastCompletedDate !== currentDate) {
+                  updatedStreak = 0;
+                  // Update the reset streak in Firebase
+                  update(userRef, {
+                    streak: 0,
+                    lastStreakReset: currentDate
+                  }).catch(err => console.error("Error resetting streak:", err));
+                }
+                
+                // Update local state with latest data
+                setUserStreak(updatedStreak);
                 setUserPoints(userData.points || 0);
+                
               } else {
                 // Create initial user data if it doesn't exist
-                update(userRef, {
+                const initialUserData = {
                   streak: 0,
                   points: 0,
                   lastCompletedDate: null,
-                  createdAt: serverTimestamp()
+                  createdAt: serverTimestamp(),
+                  activities: []
+                };
+                
+                update(userRef, initialUserData).then(() => {
+                  console.log("Created new user profile");
+                  setUserStreak(0);
+                  setUserPoints(0);
+                }).catch(err => {
+                  console.error("Error creating user profile:", err);
                 });
               }
             });
@@ -503,6 +534,7 @@ const MindfulActivitiesComponent = ({ selectedMood }) => {
       
       if (remaining <= 0) {
         clearInterval(timerRef.current);
+        timerRef.current = null;
         setTimeRemaining(0);
         completeActivity(true);
       } else {
@@ -521,7 +553,7 @@ const MindfulActivitiesComponent = ({ selectedMood }) => {
   // Complete activity
   const completeActivity = (completed = false) => {
     console.log("Complete activity called, clearing timer");
-    // FIX 1: Make sure to always clear the timer when completing activity
+    // Make sure to always clear the timer when completing activity
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
@@ -531,10 +563,15 @@ const MindfulActivitiesComponent = ({ selectedMood }) => {
       try {
         // Award points and update streak
         const pointsEarned = selectedYogaPose ? selectedYogaPose.points : selectedActivity.points;
+        const activityTitle = selectedYogaPose ? selectedYogaPose.name : selectedActivity.title;
+        const currentDate = new Date().toDateString();
         
-        // Update local state
-        setUserPoints(prev => prev + pointsEarned);
-        setUserStreak(prev => prev + 1);
+        // First update local state to avoid lag in UI
+        const newPoints = userPoints + pointsEarned;
+        const newStreak = userStreak + 1;
+        
+        setUserPoints(newPoints);
+        setUserStreak(newStreak);
         
         // Show success message
         Alert.alert(
@@ -542,24 +579,63 @@ const MindfulActivitiesComponent = ({ selectedMood }) => {
           `Congratulations! You've earned ${pointsEarned} points.`
         );
         
-        // Update Firebase (if we're connected)
+        // Prepare the activity record
+        const activityRecord = {
+          title: activityTitle,
+          points: pointsEarned,
+          completedAt: serverTimestamp(),
+          mood: selectedMood
+        };
+        
+        // Update Firebase with proper error handling
         const userRef = ref(db, `users/${userId}`);
-        update(userRef, {
-          points: userPoints + pointsEarned,
-          streak: userStreak + 1,
-          lastCompletedDate: new Date().toDateString(),
-          lastActivityCompleted: {
-            title: selectedYogaPose ? selectedYogaPose.name : selectedActivity.title,
-            points: pointsEarned,
-            completedAt: serverTimestamp()
+        
+        // Get current user data to ensure we have the most up-to-date values
+        get(userRef).then((snapshot) => {
+          if (snapshot.exists()) {
+            const userData = snapshot.val();
+            
+            // Create an array for activities if it doesn't exist
+            const activities = userData.activities || [];
+            activities.push(activityRecord);
+            
+            // Limit to last 50 activities to prevent database from growing too large
+            if (activities.length > 50) {
+              activities.shift(); // Remove oldest activity
+            }
+            
+            // Update with all data
+            update(userRef, {
+              points: newPoints,
+              streak: newStreak,
+              lastCompletedDate: currentDate,
+              lastActivityCompleted: activityRecord,
+              activities: activities
+            }).then(() => {
+              console.log("User data updated successfully");
+            }).catch(err => {
+              console.error("Error updating user data:", err);
+              // Retry once if update fails
+              setTimeout(() => {
+                update(userRef, {
+                  points: newPoints,
+                  streak: newStreak,
+                  lastCompletedDate: currentDate,
+                  lastActivityCompleted: activityRecord
+                }).catch(e => console.error("Error in retry update:", e));
+              }, 1000);
+            });
           }
-        }).catch(err => console.error("Error updating user data:", err));
+        }).catch(err => {
+          console.error("Error getting user data:", err);
+        });
+        
       } catch (error) {
         console.error("Error completing activity:", error);
       }
     }
     
-    // FIX 2: Reset all activity state variables
+    // Reset all activity state variables
     setTimeRemaining(0);
     setActivityStarted(false);
     setModalVisible(false);
@@ -736,7 +812,7 @@ const MindfulActivitiesComponent = ({ selectedMood }) => {
         visible={modalVisible}
         onRequestClose={() => {
           if (activityStarted) {
-            // FIX: Bypass the alert and directly stop the activity
+            // Bypass the alert and directly stop the activity
             console.log("Modal back button - stopping activity");
             if (timerRef.current) {
               clearInterval(timerRef.current);
@@ -802,8 +878,12 @@ const MindfulActivitiesComponent = ({ selectedMood }) => {
                     </Text>
                   </View>
                 ) : (
-                  // Yoga pose details view
-                  <>
+                  // Yoga pose details view - make this scrollable
+                  <ScrollView 
+                    style={styles.yogaPoseScrollView}
+                    showsVerticalScrollIndicator={true}
+                    contentContainerStyle={styles.yogaPoseScrollContent}
+                  >
                     <View style={styles.yogaAvatarPreviewContainer}>
                       <Image 
                         source={selectedYogaPose.imagePath}
@@ -836,14 +916,21 @@ const MindfulActivitiesComponent = ({ selectedMood }) => {
                         ))}
                       </View>
                     </View>
-                  </>
+                    
+                    <TouchableOpacity 
+                      style={[styles.startButton, { backgroundColor: '#4CAF50', marginTop: 15, marginBottom: 20 }]}
+                      onPress={startActivity}
+                    >
+                      <Text style={styles.startButtonText}>Start Yoga Session</Text>
+                    </TouchableOpacity>
+                  </ScrollView>
                 )}
                 
-                {activityStarted ? (
+                {activityStarted && (
                   <TouchableOpacity 
-                    style={[styles.startButton, { backgroundColor: '#e53935' }]}
+                    style={[styles.startButton, { backgroundColor: '#e53935', marginTop: 15 }]}
                     onPress={() => {
-                      // FIX: Bypass the alert and directly stop the activity
+                      // Bypass the alert and directly stop the activity
                       console.log("Stop Yoga Session button pressed");
                       if (timerRef.current) {
                         clearInterval(timerRef.current);
@@ -853,13 +940,6 @@ const MindfulActivitiesComponent = ({ selectedMood }) => {
                     }}
                   >
                     <Text style={styles.startButtonText}>Stop Session</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity 
-                    style={[styles.startButton, { backgroundColor: '#4CAF50' }]}
-                    onPress={startActivity}
-                  >
-                    <Text style={styles.startButtonText}>Start Yoga Session</Text>
                   </TouchableOpacity>
                 )}
               </>
@@ -913,7 +993,7 @@ const MindfulActivitiesComponent = ({ selectedMood }) => {
                   <TouchableOpacity 
                     style={[styles.startButton, { backgroundColor: '#e53935' }]}
                     onPress={() => {
-                      // FIX: Bypass the alert and directly stop the activity
+                      // Bypass the alert and directly stop the activity
                       console.log("Stop Activity button pressed");
                       if (timerRef.current) {
                         clearInterval(timerRef.current);
@@ -1395,7 +1475,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
     color: '#4CAF50',
-  }
+  },
+  yogaPoseScrollView: {
+    maxHeight: Dimensions.get('window').height * 0.7,
+    marginBottom: 5,
+  },
+  yogaPoseScrollContent: {
+    paddingBottom: 10,
+  },
 });
 
 export default MindfulActivitiesComponent;

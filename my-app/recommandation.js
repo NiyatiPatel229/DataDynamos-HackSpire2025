@@ -4,6 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import MindfulActivitiesComponent from './MindfulActivitiesComponent';
 import { auth, db } from './firebase'; // Import Firebase
 import { ref, onValue } from 'firebase/database'; // Import database methods
+import * as Animatable from 'react-native-animatable'; // Import Animatable for animations
 
 // Dataset for mood-based recommendations
 const moodData = {
@@ -228,6 +229,7 @@ const RecommendationScreen = () => {
   const [musicRecommendations, setMusicRecommendations] = useState(moodData.happy.music);
   const [movieRecommendations, setMovieRecommendations] = useState(moodData.happy.movies);
   const [autoMode, setAutoMode] = useState(true); // Default to automatic mode
+  const [activeTab, setActiveTab] = useState(null); // Add this new state for tracking active tab
   
   const moods = [
     'happy', 'sad', 'energetic', 'relaxed', 'anxious',
@@ -379,75 +381,160 @@ const RecommendationScreen = () => {
             </View>
           )}
           
-          {/* Music Recommendations */}
+          {/* Content Recommendations Tabbed Interface */}
           <View style={styles.sectionContainer}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Music For You</Text>
-              <TouchableOpacity style={styles.viewAllButton}>
-                <Text style={styles.viewAllText}>View All</Text>
+            <View style={styles.tabsContainer}>
+              <TouchableOpacity 
+                style={[
+                  styles.tabButton, 
+                  activeTab === 'music' && styles.activeTabButton
+                ]}
+                onPress={() => setActiveTab(activeTab === 'music' ? null : 'music')}
+              >
+                <Text style={[
+                  styles.tabButtonText, 
+                  activeTab === 'music' && styles.activeTabButtonText
+                ]}>
+                  Music
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[
+                  styles.tabButton, 
+                  activeTab === 'movies' && styles.activeTabButton
+                ]}
+                onPress={() => setActiveTab(activeTab === 'movies' ? null : 'movies')}
+              >
+                <Text style={[
+                  styles.tabButtonText, 
+                  activeTab === 'movies' && styles.activeTabButtonText
+                ]}>
+                  Movies & Shows
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[
+                  styles.tabButton, 
+                  activeTab === 'books' && styles.activeTabButton
+                ]}
+                onPress={() => setActiveTab(activeTab === 'books' ? null : 'books')}
+              >
+                <Text style={[
+                  styles.tabButtonText, 
+                  activeTab === 'books' && styles.activeTabButtonText
+                ]}>
+                  Books
+                </Text>
               </TouchableOpacity>
             </View>
-            <View style={styles.recommendationsBox}>
-              {musicRecommendations.map((item, index) => (
-                <View key={index} style={styles.recommendationItem}>
-                  <View style={styles.musicIconContainer}>
-                    <Text style={styles.musicIcon}>🎵</Text>
-                  </View>
-                  <View style={styles.itemContent}>
-                    <Text style={styles.itemTitle} numberOfLines={1}>{item.title}</Text>
-                    <Text style={styles.itemSubtitle} numberOfLines={1}>{item.artist}</Text>
-                  </View>
-                  <TouchableOpacity style={styles.playButton}>
-                    <Text>▶️</Text>
+            
+            {/* Music Recommendations */}
+            {activeTab === 'music' && (
+              <Animatable.View 
+                animation="fadeIn" 
+                duration={500} 
+                style={styles.tabContentContainer}
+              >
+                <View style={styles.tabHeaderRow}>
+                  <Text style={styles.tabContentTitle}>Music For Your Mood</Text>
+                  <TouchableOpacity style={styles.viewAllButton}>
+                    <Text style={styles.viewAllText}>View All</Text>
                   </TouchableOpacity>
                 </View>
-              ))}
-            </View>
-          </View>
-          
-          {/* Movie Recommendations */}
-          <View style={styles.sectionContainer}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Movies & Shows</Text>
-              <TouchableOpacity style={styles.viewAllButton}>
-                <Text style={styles.viewAllText}>View All</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.recommendationsBox}>
-              {movieRecommendations.map((item, index) => (
-                <View key={index} style={styles.recommendationItem}>
-                  <View style={styles.movieIconContainer}>
-                    <Text style={styles.movieIcon}>🎬</Text>
-                  </View>
-                  <View style={styles.itemContent}>
-                    <Text style={styles.itemTitle} numberOfLines={1}>{item.title} ({item.year})</Text>
-                    <Text style={styles.itemSubtitle} numberOfLines={1}>{item.genre}</Text>
-                  </View>
-                  <TouchableOpacity style={styles.infoButton}>
-                    <Text>ℹ️</Text>
+                
+                <View style={styles.recommendationsBox}>
+                  {musicRecommendations.map((item, index) => (
+                    <Animatable.View 
+                      key={index} 
+                      animation="fadeInUp"
+                      delay={index * 100}
+                      duration={500}
+                    >
+                      <View style={styles.recommendationItem}>
+                        <View style={styles.musicIconContainer}>
+                          <Text style={styles.musicIcon}>🎵</Text>
+                        </View>
+                        <View style={styles.itemContent}>
+                          <Text style={styles.itemTitle} numberOfLines={1}>{item.title}</Text>
+                          <Text style={styles.itemSubtitle} numberOfLines={1}>{item.artist}</Text>
+                        </View>
+                        <TouchableOpacity style={styles.playButton}>
+                          <Text>▶️</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </Animatable.View>
+                  ))}
+                </View>
+              </Animatable.View>
+            )}
+            
+            {/* Movie Recommendations */}
+            {activeTab === 'movies' && (
+              <Animatable.View 
+                animation="fadeIn" 
+                duration={500} 
+                style={styles.tabContentContainer}
+              >
+                <View style={styles.tabHeaderRow}>
+                  <Text style={styles.tabContentTitle}>Movies For Your Mood</Text>
+                  <TouchableOpacity style={styles.viewAllButton}>
+                    <Text style={styles.viewAllText}>View All</Text>
                   </TouchableOpacity>
                 </View>
-              ))}
-            </View>
-          </View>
-          
-          {/* Books Section with Enhanced UI */}
-          <View style={styles.sectionContainer}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Books & Reading</Text>
-              <TouchableOpacity style={styles.viewAllButton}>
-                <Text style={styles.viewAllText}>Coming Soon</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={styles.comingSoonBox}>
-              <Text style={styles.comingSoonIcon}>📚</Text>
-              <Text style={styles.comingSoonText}>
-                Book recommendations tailored to your mood are coming soon.
-              </Text>
-              <TouchableOpacity style={styles.notifyButton}>
-                <Text style={styles.notifyButtonText}>Notify Me</Text>
-              </TouchableOpacity>
-            </View>
+                
+                <View style={styles.recommendationsBox}>
+                  {movieRecommendations.map((item, index) => (
+                    <Animatable.View 
+                      key={index} 
+                      animation="fadeInUp"
+                      delay={index * 100}
+                      duration={500}
+                    >
+                      <View style={styles.recommendationItem}>
+                        <View style={styles.movieIconContainer}>
+                          <Text style={styles.movieIcon}>🎬</Text>
+                        </View>
+                        <View style={styles.itemContent}>
+                          <Text style={styles.itemTitle} numberOfLines={1}>{item.title} ({item.year})</Text>
+                          <Text style={styles.itemSubtitle} numberOfLines={1}>{item.genre}</Text>
+                        </View>
+                        <TouchableOpacity style={styles.infoButton}>
+                          <Text>ℹ️</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </Animatable.View>
+                  ))}
+                </View>
+              </Animatable.View>
+            )}
+            
+            {/* Books Recommendations */}
+            {activeTab === 'books' && (
+              <Animatable.View 
+                animation="fadeIn" 
+                duration={500} 
+                style={styles.tabContentContainer}
+              >
+                <View style={styles.tabHeaderRow}>
+                  <Text style={styles.tabContentTitle}>Books & Reading</Text>
+                  <TouchableOpacity style={styles.viewAllButton}>
+                    <Text style={styles.viewAllText}>Coming Soon</Text>
+                  </TouchableOpacity>
+                </View>
+                
+                <View style={styles.comingSoonBox}>
+                  <Text style={styles.comingSoonIcon}>📚</Text>
+                  <Text style={styles.comingSoonText}>
+                    Book recommendations tailored to your mood are coming soon.
+                  </Text>
+                  <TouchableOpacity style={styles.notifyButton}>
+                    <Text style={styles.notifyButtonText}>Notify Me</Text>
+                  </TouchableOpacity>
+                </View>
+              </Animatable.View>
+            )}
           </View>
           
           {/* Mindful Activities */}
@@ -641,6 +728,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   recommendationItem: {
+    flexDirection: 'row',
     backgroundColor: 'white',
     borderRadius: 12,
     padding: 16,
@@ -649,30 +737,30 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 3,
-    flexDirection: 'row',
-    alignItems: 'center',
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(147, 112, 219, 0.05)',
   },
   musicIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(147, 112, 219, 0.15)',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(147, 112, 219, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 16,
   },
   musicIcon: {
     fontSize: 20,
   },
   movieIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(147, 112, 219, 0.15)',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(147, 112, 219, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 16,
   },
   movieIcon: {
     fontSize: 20,
@@ -691,17 +779,17 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   playButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: 'rgba(147, 112, 219, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   infoButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: 'rgba(147, 112, 219, 0.1)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -785,6 +873,59 @@ const styles = StyleSheet.create({
     fontSize: 24,
     color: 'white',
     fontWeight: 'bold',
+  },
+  tabsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    borderRadius: 16,
+    backgroundColor: '#f0f0f5',
+    padding: 4,
+    shadowColor: '#9370DB',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 12,
+    marginHorizontal: 2,
+  },
+  activeTabButton: {
+    backgroundColor: '#9370DB',
+  },
+  tabButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#555',
+  },
+  activeTabButtonText: {
+    color: 'white',
+  },
+  tabContentContainer: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#9370DB',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  tabHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  tabContentTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
   },
 });
 

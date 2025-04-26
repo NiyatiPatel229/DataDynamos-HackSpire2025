@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, SafeAreaView, ActivityIndicator, Alert, Platform, Animated } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, SafeAreaView, ActivityIndicator, Alert, Platform, Animated, Dimensions } from 'react-native';
 import { db, auth } from './firebase'; // your firebase config
-import { ref, onValue, off, push, set, update, query, limitToLast, remove } from 'firebase/database';
+import { ref, onValue, off, push, set, update, query, orderByChild, limitToLast, remove } from 'firebase/database';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 const randomNames = ["Fox", "Cat", "Wolf", "Panda", "Rabbit", "Tiger", "Owl", "Eagle", "Koala", "Lion"];
+
+// Get screen dimensions for responsive design
+const { width, height } = Dimensions.get('window');
 
 const Community = () => {
   const [tips, setTips] = useState([]);

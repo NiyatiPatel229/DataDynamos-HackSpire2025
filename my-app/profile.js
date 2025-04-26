@@ -24,6 +24,8 @@ const ProfileScreen = () => {
   const [moodHistory, setMoodHistory] = useState([]);
   const [timePeriod, setTimePeriod] = useState(TIME_PERIODS.CURRENT);
   const [sosSending, setSosSending] = useState(false);
+  const [userStreak, setUserStreak] = useState(0); // Add state for streak
+  const [userPoints, setUserPoints] = useState(0); // Add state for mindfulness points
   
   // Add responsive dimensions state
   const [dimensions, setDimensions] = useState({ 
@@ -399,141 +401,133 @@ const ProfileScreen = () => {
   );
 
   const renderChartContent = () => {
-    // Calculate responsive chart dimensions based on screen size
-    const containerPadding = 40; // Increase padding to prevent overflow
-    const chartWidth = Math.min(dimensions.window.width - containerPadding, 500);
-    const chartHeight = Math.min(180, dimensions.window.height * 0.25); // Slightly smaller height
-    
-    // Add increased padding for chart
-    const chartStyle = {
-      ...styles.chart,
-      paddingRight: 10, // Extra padding on the right
-      marginLeft: -10 // Offset a bit to the left
-    };
-    
-    // Dynamic styles that depend on chart dimensions
-    const dynamicStyles = {
-      chartContainer: {
-        marginBottom: 20,
-        alignItems: 'center',
-      },
-      axisLabelsContainer: {
-        width: chartWidth,
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        paddingHorizontal: 10,
-        marginTop: 5,
-      },
-      xAxisLabel: {
-        fontSize: 12,
-        fontWeight: 'bold',
-        color: '#666',
-        textAlign: 'center',
-        width: '100%',
-      },
-      yAxisLabelContainer: {
-        position: 'absolute',
-        left: -25,
-        top: chartHeight / 2 - 20,
-        width: 20,
-        height: 60,
-      },
-      yAxisLabel: {
-        fontSize: 12,
-        fontWeight: 'bold',
-        color: '#666',
-        transform: [{ rotate: '-90deg' }],
-        width: 60,
-        textAlign: 'center',
-      }
-    };
-    
     if (loading) {
       return (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={primaryColor} />
-          <Text style={styles.loadingText}>Loading your mood history...</Text>
+        <View style={styles.chartLoadingContainer}>
+          <ActivityIndicator size="large" color="#51987" />
+          <Text style={styles.chartSubtitle}>Loading mood data...</Text>
         </View>
       );
     }
-    
-    if (timePeriod === TIME_PERIODS.CURRENT && moodHistory.length === 0) {
+
+    if (moodHistory.length === 0) {
       return (
-        <Text style={styles.noDataText}>
-          No mood data available yet. Chat with the assistant to track your mood over time.
-        </Text>
-      );
-    }
-    
-    // Create chart component with proper configuration
-    const renderChart = (data) => (
-      <View style={dynamicStyles.chartContainer}>
-        {/* Y-axis label */}
-        <View style={dynamicStyles.yAxisLabelContainer}>
-          <Text style={dynamicStyles.yAxisLabel}>Mood</Text>
-        </View>
-        
-        <LineChart
-          data={data}
-          width={chartWidth}
-          height={chartHeight}
-          chartConfig={{
-            ...chartConfig,
-            // Adjust label rotation based on screen width
-            horizontalLabelRotation: dimensions.window.width < 350 ? 60 : 45,
-            // Hide some labels if there are too many
-            skipLabels: dimensions.window.width < 350 ? 1 : 0
-          }}
-          withHorizontalLines={true}
-          withVerticalLines={true} // Enable vertical grid lines
-          withDots={true}
-          withShadow={false}
-          bezier
-          style={chartStyle}
-          withInnerLines={true} // Enable inner grid lines
-          fromZero
-          segments={3} // Y-axis segments
-          yAxisLabel="" // Empty string before values
-          yAxisSuffix="" // Empty string after values
-        />
-        
-        {/* X-axis label */}
-        <View style={dynamicStyles.axisLabelsContainer}>
-          <Text style={dynamicStyles.xAxisLabel}>Date</Text>
-        </View>
-      </View>
-    );
-    
-    if (timePeriod === TIME_PERIODS.WEEKLY) {
-      return (
-        <View style={styles.chartWrapper}>
-          {renderChart(prepareChartData())}
-          <Text style={styles.noDataText}>
-            Weekly mood history is not available yet.
-          </Text>
+        <View style={styles.chartEmptyContainer}>
+          <Text style={styles.chartEmptyText}>😊</Text>
+          <Text style={styles.chartSubtitle}>No mood data available yet</Text>
+          <TouchableOpacity 
+            style={styles.refreshButton}
+            onPress={loadMoodHistory}
+          >
+            <Text style={styles.refreshButtonText}>Refresh Data</Text>
+          </TouchableOpacity>
         </View>
       );
     }
-    
-    if (timePeriod === TIME_PERIODS.MONTHLY) {
-      return (
-        <View style={styles.chartWrapper}>
-          {renderChart(prepareChartData())}
-          <Text style={styles.noDataText}>
-            Monthly mood history is not available yet.
-          </Text>
-        </View>
-      );
-    }
-    
+
+    const chartData = {
+      labels: moodHistory.map(mood => formatDate(mood.timestamp)),
+      datasets: [
+        {
+          data: moodHistory.map(mood => getSentimentValue(mood.sentiment)),
+          color: (opacity = 1) => `rgba(81, 152, 114, ${opacity})`, // Green with opacity
+          strokeWidth: 3,
+          withDots: true,
+          withGradient: true,
+          fillShadowGradient: '#51987',
+          fillShadowGradientOpacity: 0.25
+        }
+      ],
+      legend: ["Mood Trends"]
+    };
+
+    const enhancedChartConfig = {
+      backgroundColor: '#ffffff',
+      backgroundGradientFrom: '#ffffff',
+      backgroundGradientTo: '#ffffff',
+      decimalPlaces: 0,
+      color: (opacity = 1) => `rgba(81, 152, 114, ${opacity})`,
+      labelColor: (opacity = 1) => `rgba(51, 51, 51, ${opacity})`,
+      style: {
+        borderRadius: 16,
+      },
+      strokeWidth: 2,
+      barPercentage: 0.5,
+      useShadowColorFromDataset: true,
+      propsForDots: {
+        r: '5',
+        strokeWidth: '2',
+        stroke: '#ffffff',
+      },
+      propsForBackgroundLines: {
+        stroke: '#e3e3e3',
+      },
+      formatYLabel: (value) => {
+        if (value === 1) return "Positive";
+        if (value === 0) return "Neutral";
+        if (value === -1) return "Negative";
+        return "";
+      },
+    };
+
     return (
-      <View style={styles.chartWrapper}>
-        {renderChart(prepareChartData())}
-        <Text style={styles.chartDescription}>
-          This chart shows your mood patterns based on your conversations with the mental health assistant.
-        </Text>
+      <View style={styles.chartContainer}>
+        <View style={styles.chartHeader}>
+          <Text style={styles.chartTitle}>Your Mood Over Time</Text>
+          <Text style={styles.chartSubtitle}>Last 7 entries</Text>
+        </View>
+        
+        <View style={styles.chartWrapper}>
+          <LineChart
+            data={chartData}
+            width={Dimensions.get('window').width - 60}
+            height={220}
+            chartConfig={enhancedChartConfig}
+            bezier
+            style={styles.chart}
+            withVerticalLines={true}
+            withHorizontalLines={true}
+            withInnerLines={true}
+            withOuterLines={true}
+            withShadow={false}
+          />
+          <View style={styles.chartLegend}>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: '#51987' }]} />
+              <Text style={styles.legendText}>Positive</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: '#FFA500' }]} />
+              <Text style={styles.legendText}>Neutral</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: '#FF6B6B' }]} />
+              <Text style={styles.legendText}>Negative</Text>
+            </View>
+          </View>
+        </View>
       </View>
     );
+  };
+
+  // Add a new useEffect to fetch user streak and mindfulness points from Firebase
+  useEffect(() => {
+    fetchUserStats();
+  }, []);
+
+  // Create a function to fetch user streak and mindfulness points
+  const fetchUserStats = () => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+    
+    const userRef = ref(db, `users/${currentUser.uid}`);
+    onValue(userRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const userData = snapshot.val();
+        setUserStreak(userData.streak || 0);
+        setUserPoints(userData.points || 0);
+      }
+    });
   };
 
   return (
@@ -575,12 +569,38 @@ const ProfileScreen = () => {
             <Text style={styles.userEmail}>{auth.currentUser?.email}</Text>
           </View>
           
-          <Text style={styles.sectionTitle}>Account Settings</Text>
-          <View style={styles.placeholderBox}>
-            <Text style={styles.placeholderText}>
-              Account settings will be implemented here.
+          {/* Add Mindfulness Statistics Section */}
+          <View style={styles.statsContainer}>
+            <Text style={styles.statsTitle}>Mindfulness Statistics</Text>
+            
+            <View style={styles.statsCardsContainer}>
+              <View style={styles.statsCard}>
+                <View style={styles.statsIconContainer}>
+                  <Text style={styles.statsIcon}>🔥</Text>
+                </View>
+                <View style={styles.statsContent}>
+                  <Text style={styles.statsValue}>{userStreak}</Text>
+                  <Text style={styles.statsLabel}>Day Streak</Text>
+                </View>
+              </View>
+              
+              <View style={styles.statsCard}>
+                <View style={styles.statsIconContainer}>
+                  <Text style={styles.statsIcon}>✨</Text>
+                </View>
+                <View style={styles.statsContent}>
+                  <Text style={styles.statsValue}>{userPoints}</Text>
+                  <Text style={styles.statsLabel}>Mindfulness Points</Text>
+                </View>
+              </View>
+            </View>
+            
+            <Text style={styles.statsDescription}>
+              Continue your mindfulness activities to increase your streak and earn more points!
             </Text>
           </View>
+          
+          
           
           <Text style={styles.sectionTitle}>Wellness Progress</Text>
           <View style={styles.chartContainer}>
@@ -700,13 +720,6 @@ const ProfileScreen = () => {
             </Text>
           </View>
           
-          <Text style={styles.sectionTitle}>Notification Preferences</Text>
-          <View style={styles.placeholderBox}>
-            <Text style={styles.placeholderText}>
-              Notification settings will be displayed in this section.
-            </Text>
-          </View>
-          
           <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
             <Text style={styles.signOutText}>Sign Out</Text>
           </TouchableOpacity>
@@ -797,84 +810,117 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   chartContainer: {
-    backgroundColor: 'white',
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 15,
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 20,
+    marginHorizontal: 20,
+    marginVertical: 15,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 2,
-    alignItems: 'center',
+    elevation: 3,
   },
-  timeFilterContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
+  chartHeader: {
     marginBottom: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-    paddingBottom: 10,
-  },
-  timeFilterButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  activeTimeFilterButton: {
-    backgroundColor: primaryColor + '20', // 20% opacity
-  },
-  timeFilterText: {
-    fontSize: 14,
-    color: '#666',
-    fontWeight: '500',
-  },
-  activeTimeFilterText: {
-    color: primaryColor,
-    fontWeight: 'bold',
   },
   chartTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 15,
-    textAlign: 'center',
-    color: '#333',
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333333',
+    marginBottom: 4,
+  },
+  chartSubtitle: {
+    fontSize: 14,
+    color: '#666666',
   },
   chartWrapper: {
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    overflow: 'hidden', // Prevent chart from overflowing
-    marginHorizontal: -15, // Negative margin to allow for slightly wider chart
+    marginBottom: 15,
   },
   chart: {
     marginVertical: 8,
     borderRadius: 16,
-    alignSelf: 'center',
-    paddingBottom: 10, // Additional padding at bottom for labels
   },
-  chartDescription: {
-    fontSize: Math.min(12, Dimensions.get('window').width * 0.035),
-    color: '#666',
-    textAlign: 'center',
+  chartLegend: {
+    flexDirection: 'row',
+    justifyContent: 'center',
     marginTop: 10,
-    paddingHorizontal: 10,
-    maxWidth: '90%',
   },
-  loadingContainer: {
-    padding: 20,
+  legendItem: {
+    flexDirection: 'row',
     alignItems: 'center',
+    marginHorizontal: 10,
   },
-  loadingText: {
-    marginTop: 10,
-    color: '#666',
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
   },
-  noDataText: {
+  legendText: {
+    fontSize: 12,
+    color: '#666666',
+  },
+  chartLoadingContainer: {
+    backgroundColor: '#fff',
+    margin: 16,
+    marginTop: 20,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#9370DB',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 5,
+    borderWidth: 1,
+    borderColor: '#e8e8f0',
+    minHeight: 180,
+  },
+  chartEmptyContainer: {
+    backgroundColor: '#fff',
+    margin: 16,
+    marginTop: 20,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#9370DB',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 5,
+    borderWidth: 1,
+    borderColor: '#e8e8f0',
+    minHeight: 180,
+  },
+  chartEmptyText: {
+    fontSize: 44,
+    marginBottom: 16,
+  },
+  refreshButton: {
+    backgroundColor: '#9370DB',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 25,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#9370DB',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  refreshButtonText: {
+    color: '#fff',
     fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    fontStyle: 'italic',
-    paddingVertical: 15,
+    fontWeight: '600',
   },
   signOutButton: {
     backgroundColor: '#f44336',
@@ -1063,6 +1109,100 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: 'bold',
     fontSize: Math.min(16, Dimensions.get('window').width * 0.04),
+  },
+  // Add these new styles to the StyleSheet object
+  statsContainer: {
+    backgroundColor: 'white',
+    borderRadius: 15,
+    padding: 18,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  statsTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  statsCardsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  statsCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f8f8f8',
+    borderRadius: 12,
+    padding: 15,
+    flex: 0.48, // Slightly less than half to account for margin
+    shadowColor: '#9370DB',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  statsIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(147, 112, 219, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  statsIcon: {
+    fontSize: 22,
+  },
+  statsContent: {
+    flex: 1,
+  },
+  statsValue: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  statsLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 2,
+  },
+  statsDescription: {
+    fontSize: 14,
+    color: '#666',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    marginTop: 10,
+  },
+  timeFilterContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+    paddingBottom: 10,
+  },
+  timeFilterButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  activeTimeFilterButton: {
+    backgroundColor: primaryColor + '20', // 20% opacity
+  },
+  timeFilterText: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  activeTimeFilterText: {
+    color: primaryColor,
+    fontWeight: 'bold',
   },
 });
 
