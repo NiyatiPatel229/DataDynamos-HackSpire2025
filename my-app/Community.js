@@ -240,7 +240,7 @@ const Community = () => {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <View style={styles.inputContainer}>
       <View style={styles.pageHeader}>
   <Text style={styles.pageTitle}>Community</Text>
@@ -263,7 +263,7 @@ const Community = () => {
         renderItem={renderTip}
         contentContainerStyle={{ padding: 16 }}
       />
-    </SafeAreaView>
+       </View>
   );
 };
 
@@ -323,6 +323,30 @@ const styles = StyleSheet.create({
   actionCount: {
     color: '#666',
     fontSize: 14
+  },
+  pageHeader: {
+    backgroundColor: '#6200ee',
+    padding: 20,
+    paddingTop: 60,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+  },
+  pageTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  pageSubtitle: {
+    fontSize: 16,
+    color: 'white',
+    marginTop: 5,
+  },
+  contentContainer: {
+    flex: 1,
+  },
+  inputContainer: { 
+    padding: 16,
+    marginTop: 10,
   },
   comment: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f0edff', padding: 8, borderRadius: 8, marginTop: 6 },
   commentAuthor: { fontWeight: 'bold', marginRight: 4 },
