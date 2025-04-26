@@ -19,7 +19,7 @@ import Icon from 'react-native-vector-icons/MaterialIcons';
 import * as Speech from 'expo-speech';
 import Voice from '@react-native-voice/voice';
 import { auth, db } from './firebase';
-import { ref, push, set, onValue, remove, query, orderByChild, equalTo } from 'firebase/database';
+import { ref, push, set, onValue, remove, query, orderByChild, equalTo, limitToLast } from 'firebase/database';
 import axios from 'axios';
 
 // You'll need to install: expo-linear-gradient, expo-speech, @react-native-voice/voice, axios
@@ -34,6 +34,9 @@ const HomeScreen = () => {
   const [loading, setLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [voiceAvailable, setVoiceAvailable] = useState(false);
+  const [currentMood, setCurrentMood] = useState({ sentiment: 'neutral', score: 0, timestamp: null });
+  const [moodHistory, setMoodHistory] = useState([]);
   const flatListRef = useRef(null);
   const currentUser = auth.currentUser;
   
@@ -120,6 +123,14 @@ const HomeScreen = () => {
     }
   }, [chatHistory]);
 
+  // Load user's current mood and mood history when component mounts
+  useEffect(() => {
+    if (currentUser) {
+      loadCurrentMood();
+      loadMoodHistory();
+    }
+  }, [currentUser]);
+
   const loadChatHistory = async () => {
     if (!currentUser) return;
     
@@ -171,35 +182,23 @@ const HomeScreen = () => {
     if (!currentUser) return;
     
     try {
-      console.log("Starting to clear chat history for user:", currentUser.uid);
       setLoading(true);
-      
-      // First, clear the local chat history state
-      console.log("Clearing local chat history state");
-      setChatHistory([]);
-      
-      // Then delete all chat messages from the database
-      console.log("Removing chat history from Firebase");
+      // Delete all chat messages for this user
       const chatRef = ref(db, `chatHistory/${currentUser.uid}`);
       await remove(chatRef);
-      console.log("Successfully deleted chat history from Firebase");
       
-      // Finally, add back the initial message
+      // Reset chat with initial message
       const initialMessage = {
         id: 'initial',
         text: "How have you been doing lately?",
         sender: 'bot',
         timestamp: new Date().getTime()
       };
-      
-      console.log("Adding initial message back to chat");
       setChatHistory([initialMessage]);
       
-      // Save the initial message to database
+      // Save the initial message back to database
       const newChatRef = ref(db, `chatHistory/${currentUser.uid}/${initialMessage.id}`);
       await set(newChatRef, initialMessage);
-      console.log("Chat history successfully cleared and reset");
-      
     } catch (error) {
       console.error("Error clearing chat history:", error);
       Alert.alert("Error", "Failed to clear chat history");
@@ -287,6 +286,121 @@ const HomeScreen = () => {
     }
   };
 
+  // Load current mood from Firebase
+  const loadCurrentMood = () => {
+    if (!currentUser) return;
+
+    const currentMoodRef = ref(db, `userMoods/${currentUser.uid}/currentMood`);
+    onValue(currentMoodRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const moodData = snapshot.val();
+        setCurrentMood(moodData);
+      } else {
+        // Set default mood if none exists
+        setCurrentMood({ 
+          sentiment: 'neutral', 
+          score: 0, 
+          timestamp: new Date().getTime() 
+        });
+      }
+    }, { onlyOnce: true });
+  };
+
+  // Load mood history from Firebase
+  const loadMoodHistory = () => {
+    if (!currentUser) return;
+
+    const moodHistoryRef = query(
+      ref(db, `userMoods/${currentUser.uid}/moodHistory`),
+      orderByChild('timestamp'),
+      limitToLast(10)
+    );
+
+    onValue(moodHistoryRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const historyData = snapshot.val();
+        const moodArray = Object.values(historyData).sort((a, b) => b.timestamp - a.timestamp);
+        setMoodHistory(moodArray);
+      }
+    }, { onlyOnce: true });
+  };
+
+  // Analyze sentiment of text using Gemini API
+  const analyzeSentiment = async (text) => {
+    try {
+      // Use Gemini to analyze sentiment
+      const response = await axios.post(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          contents: [
+            {
+              role: "user",
+              parts: [
+                {
+                  text: `Analyze the sentiment of this text and return a JSON object with a 'sentiment' field that has a value of either 'positive', 'negative', or 'neutral', and a 'score' field with a numerical score from -1 to 1 where -1 is very negative, 0 is neutral, and 1 is very positive. Only return the JSON, nothing else. Text: "${text}"`
+                }
+              ]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.2,
+            topK: 10,
+            topP: 0.8,
+            maxOutputTokens: 100,
+          }
+        }
+      );
+
+      if (response.data.candidates && response.data.candidates[0].content) {
+        const resultText = response.data.candidates[0].content.parts[0].text;
+        // Extract JSON from response
+        const jsonMatch = resultText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const sentimentResult = JSON.parse(jsonMatch[0]);
+          console.log('Sentiment analysis result:', sentimentResult);
+          return sentimentResult;
+        }
+      }
+      
+      // Default return if parsing fails
+      return { sentiment: 'neutral', score: 0 };
+    } catch (error) {
+      console.error('Error analyzing sentiment:', error);
+      return { sentiment: 'neutral', score: 0 };
+    }
+  };
+
+  // Update user's mood in database
+  const updateUserMood = async (sentimentResult) => {
+    if (!currentUser) return;
+    
+    const timestamp = new Date().getTime();
+    const moodData = {
+      ...sentimentResult,
+      timestamp
+    };
+    
+    try {
+      // Update current mood
+      const currentMoodRef = ref(db, `userMoods/${currentUser.uid}/currentMood`);
+      await set(currentMoodRef, moodData);
+      
+      // Add to mood history
+      const historyRef = ref(db, `userMoods/${currentUser.uid}/moodHistory/${timestamp}`);
+      await set(historyRef, moodData);
+      
+      // Update local state
+      setCurrentMood(moodData);
+      
+      // Update mood history
+      loadMoodHistory();
+      
+      console.log('Updated user mood:', moodData);
+    } catch (error) {
+      console.error('Error updating mood in database:', error);
+    }
+  };
+
   const handleSendMessage = async () => {
     if (!message.trim()) return;
     
@@ -299,6 +413,11 @@ const HomeScreen = () => {
     
     setChatHistory(prev => [...prev, userMessage]);
     saveChatMessage(userMessage);
+    
+    // Analyze sentiment of user's message
+    const sentimentResult = await analyzeSentiment(message.trim());
+    updateUserMood(sentimentResult);
+    
     setMessage('');
     
     // Show loading indicator
@@ -405,6 +524,25 @@ const HomeScreen = () => {
     );
   };
 
+  // Get mood emoji based on sentiment
+  const getMoodEmoji = (sentiment) => {
+    switch(sentiment) {
+      case 'positive':
+        return '😊';
+      case 'negative':
+        return '😔';
+      case 'neutral':
+      default:
+        return '😐';
+    }
+  };
+
+  // Format timestamp to readable date
+  const formatTimestamp = (timestamp) => {
+    const date = new Date(timestamp);
+    return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
+  };
+
   // Main Home Screen Render
   return (
     <View style={styles.container}>
@@ -443,6 +581,37 @@ const HomeScreen = () => {
               Daily wellness tips and suggestions will be displayed in this section.
             </Text>
           </View>
+          
+          <Text style={styles.sectionTitle}>Your Current Mood</Text>
+          <View style={styles.moodContainer}>
+            <Text style={styles.moodEmoji}>{getMoodEmoji(currentMood.sentiment)}</Text>
+            <View style={styles.moodDetails}>
+              <Text style={styles.moodText}>
+                You're feeling <Text style={styles.moodHighlight}>{currentMood.sentiment}</Text>
+              </Text>
+              {currentMood.timestamp && (
+                <Text style={styles.moodTimestamp}>Last updated: {formatTimestamp(currentMood.timestamp)}</Text>
+              )}
+            </View>
+          </View>
+          
+          {moodHistory.length > 0 && (
+            <>
+              <Text style={styles.sectionTitle}>Mood History</Text>
+              <ScrollView 
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.moodHistoryContainer}
+              >
+                {moodHistory.map((mood, index) => (
+                  <View key={index} style={styles.moodHistoryItem}>
+                    <Text style={styles.historyEmoji}>{getMoodEmoji(mood.sentiment)}</Text>
+                    <Text style={styles.historyTimestamp}>{formatTimestamp(mood.timestamp)}</Text>
+                  </View>
+                ))}
+              </ScrollView>
+            </>
+          )}
         </View>
       </ScrollView>
 
@@ -745,6 +914,64 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     backgroundColor: '#c8c8c8',
+  },
+  moodContainer: {
+    backgroundColor: 'white',
+    borderRadius: 10,
+    padding: 16,
+    marginBottom: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  moodEmoji: {
+    fontSize: 40,
+    marginRight: 16,
+  },
+  moodDetails: {
+    flex: 1,
+  },
+  moodText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  moodHighlight: {
+    fontWeight: 'bold',
+    color: '#6200ee',
+  },
+  moodTimestamp: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
+  },
+  moodHistoryContainer: {
+    marginBottom: 20,
+  },
+  moodHistoryItem: {
+    backgroundColor: 'white',
+    borderRadius: 10,
+    padding: 16,
+    marginRight: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    alignItems: 'center',
+    width: 100,
+  },
+  historyEmoji: {
+    fontSize: 30,
+    marginBottom: 8,
+  },
+  historyTimestamp: {
+    fontSize: 10,
+    color: '#666',
+    textAlign: 'center',
   },
 });
 

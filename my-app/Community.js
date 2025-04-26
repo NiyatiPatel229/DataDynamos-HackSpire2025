@@ -242,6 +242,10 @@ const Community = () => {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.inputContainer}>
+      <View style={styles.pageHeader}>
+  <Text style={styles.pageTitle}>Community</Text>
+  <Text style={styles.pageSubtitle}>Share and discover wellness tips</Text>
+</View>
         <TextInput
           value={newTip}
           onChangeText={setNewTip}

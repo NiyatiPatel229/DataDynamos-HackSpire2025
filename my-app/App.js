@@ -23,6 +23,7 @@ function MainTabNavigator() {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
+        headerShown: false, // This hides the header for all tab screens
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;
 
