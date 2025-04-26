@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Alert, ScrollView, Dimensions, ActivityIndicator, TextInput, FlatList, Linking, Platform, SafeAreaView } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Alert, ScrollView, Dimensions, ActivityIndicator, TextInput, FlatList, Linking, Platform, SafeAreaView, PermissionsAndroid, ToastAndroid } from 'react-native';
 import { signOut } from 'firebase/auth';
 import { auth, db } from './firebase';
 import { ref, onValue, query, orderByChild, limitToLast, push, set, update, remove, off } from 'firebase/database';
@@ -17,10 +17,7 @@ const TIME_PERIODS = {
 };
 
 // Default emergency contacts
-const defaultContacts = [
-  { id: 'crisis-hotline', name: 'Crisis Hotline', number: '988', default: true },
-  { id: 'text-support', name: 'Text Support', number: '741741', default: true }
-];
+const defaultContacts = [];
 
 const ProfileScreen = () => {
   const [loading, setLoading] = useState(true);
@@ -39,6 +36,10 @@ const ProfileScreen = () => {
   const [newContactName, setNewContactName] = useState('');
   const [newContactNumber, setNewContactNumber] = useState('');
   const [showContactForm, setShowContactForm] = useState(false);
+  
+  // Add state for location and SOS status
+  const [currentLocation, setCurrentLocation] = useState(null);
+  const [isSendingSOS, setIsSendingSOS] = useState(false);
   
   // Add event listener for screen dimension changes
   useEffect(() => {
@@ -69,10 +70,10 @@ const ProfileScreen = () => {
           default: false
         }));
         
-        // Combine default contacts with user contacts
-        setContacts([...defaultContacts, ...userContacts]);
+        // Only set user contacts without default contacts
+        setContacts(userContacts);
       } else {
-        setContacts(defaultContacts);
+        setContacts([]);
       }
     });
 
@@ -184,18 +185,20 @@ const ProfileScreen = () => {
       stroke: primaryColor
     },
     propsForLabels: {
-      fontSize: 8,
-      fontWeight: '400',
+      fontSize: 10,
+      fontWeight: '500',
       textLength: 4,
       ellipsizeMode: 'clip'
     },
     propsForBackgroundLines: {
-      strokeDasharray: ""
+      strokeDasharray: "",
+      stroke: "#e0e0e0", // Light gray color for grid lines
+      strokeWidth: 1
     },
     formatYLabel: (value) => {
-      if (value === 1) return "1";
-      if (value === 0) return "0";
-      if (value === -1) return "-1";
+      if (value === 1) return "Positive";
+      if (value === 0) return "Neutral";
+      if (value === -1) return "Negative";
       return "";
     },
     horizontalLabelRotation: 45,
@@ -277,89 +280,96 @@ const ProfileScreen = () => {
     }
   };
   
-  // SOS Function to send emergency messages
+  // Simplified SOS function without SMS functionality
   const handleSOS = () => {
+    console.log('SOS button pressed, contacts:', contacts.length);
+    
+    // Show feedback even if there's no contacts
     if (contacts.length === 0) {
-      Alert.alert('No Contacts', 'Please add emergency contacts first');
+      Alert.alert(
+        'No Emergency Contacts', 
+        'Please add at least one emergency contact before using the SOS feature.',
+        [
+          {
+            text: 'Add Contact',
+            onPress: () => setShowContactForm(true),
+          },
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          }
+        ]
+      );
       return;
     }
     
     Alert.alert(
-      'Send SOS',
-      'Are you sure you want to send an emergency message to all your contacts?',
+      'Emergency Call',
+      'Would you like to call your emergency contact?',
       [
         {
           text: 'Cancel',
           style: 'cancel',
+          onPress: () => console.log('SOS cancelled by user')
         },
         {
-          text: 'Send SOS',
+          text: 'Call Now',
           style: 'destructive',
-          onPress: () => sendEmergencyMessages(),
+          onPress: () => {
+            console.log('Initiating emergency call');
+            callEmergencyContact();
+          },
         },
       ],
       { cancelable: true }
     );
   };
   
-  const sendEmergencyMessages = async () => {
-    const username = auth.currentUser?.displayName || 'User';
-    const emergencyMessage = `EMERGENCY ALERT: ${username} needs immediate help. This is an automated emergency message from MindMate.`;
-    
+  // Simplified emergency handling - only makes calls, no SMS
+  const callEmergencyContact = async () => {
     setSosSending(true);
     
     try {
       // Log SOS event to database
       if (auth.currentUser) {
-        const sosRef = ref(db, `users/${auth.currentUser.uid}/sosHistory`);
-        const newSosRef = push(sosRef);
-        await set(newSosRef, {
-          timestamp: Date.now(),
-          messageSent: emergencyMessage,
-          contactsNotified: contacts.map(c => c.name)
-        });
-      }
-      
-      // Send messages to each contact
-      let messagesSent = 0;
-      
-      for (const contact of contacts) {
         try {
-          if (Platform.OS === 'android') {
-            // For Android
-            await Linking.openURL(`sms:${contact.number}?body=${encodeURIComponent(emergencyMessage)}`);
-          } else {
-            // For iOS
-            await Linking.openURL(`sms:${contact.number}&body=${encodeURIComponent(emergencyMessage)}`);
-          }
-          messagesSent++;
-          
-          // Small delay between messages
-          await new Promise(resolve => setTimeout(resolve, 500));
-        } catch (err) {
-          console.error(`Failed to send message to ${contact.name}:`, err);
+          console.log('Logging SOS event to database');
+          const sosRef = ref(db, `users/${auth.currentUser.uid}/sosHistory`);
+          const newSosRef = push(sosRef);
+          await set(newSosRef, {
+            timestamp: Date.now(),
+            action: 'emergency call',
+            contactsNotified: contacts.map(c => ({ name: c.name, number: c.number }))
+          });
+        } catch (error) {
+          console.error('Failed to log SOS to database:', error);
         }
       }
       
-      // Attempt to call first contact in the list if any exist
+      // Call first contact
       if (contacts.length > 0) {
         try {
-          await Linking.openURL(`tel:${contacts[0].number}`);
-        } catch (err) {
-          console.error('Failed to initiate call:', err);
+          const firstContact = contacts[0];
+          console.log('Calling emergency contact:', firstContact.name);
+          await Linking.openURL(`tel:${firstContact.number}`);
+          
+          Alert.alert(
+            'Emergency Call Initiated',
+            `Calling ${firstContact.name}...`,
+            [{ text: 'OK' }]
+          );
+        } catch (error) {
+          console.error('Failed to initiate call:', error);
+          Alert.alert('Error', 'Could not make the emergency call. Please try manually calling your contact.');
         }
       }
-      
-      Alert.alert(
-        'SOS Sent',
-        `Emergency messages sent to ${messagesSent} contacts.`,
-        [{ text: 'OK' }]
-      );
     } catch (error) {
-      console.error('Error in SOS function:', error);
-      Alert.alert('Error', 'Failed to send emergency messages');
+      console.error('Error in emergency function:', error);
+      Alert.alert('Error', 'Failed to complete emergency procedure');
     } finally {
+      console.log('Emergency process completed');
       setSosSending(false);
+      setIsSendingSOS(false);
     }
   };
 
@@ -401,6 +411,43 @@ const ProfileScreen = () => {
       marginLeft: -10 // Offset a bit to the left
     };
     
+    // Dynamic styles that depend on chart dimensions
+    const dynamicStyles = {
+      chartContainer: {
+        marginBottom: 20,
+        alignItems: 'center',
+      },
+      axisLabelsContainer: {
+        width: chartWidth,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        paddingHorizontal: 10,
+        marginTop: 5,
+      },
+      xAxisLabel: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        color: '#666',
+        textAlign: 'center',
+        width: '100%',
+      },
+      yAxisLabelContainer: {
+        position: 'absolute',
+        left: -25,
+        top: chartHeight / 2 - 20,
+        width: 20,
+        height: 60,
+      },
+      yAxisLabel: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        color: '#666',
+        transform: [{ rotate: '-90deg' }],
+        width: 60,
+        textAlign: 'center',
+      }
+    };
+    
     if (loading) {
       return (
         <View style={styles.loadingContainer}>
@@ -420,27 +467,41 @@ const ProfileScreen = () => {
     
     // Create chart component with proper configuration
     const renderChart = (data) => (
-      <LineChart
-        data={data}
-        width={chartWidth}
-        height={chartHeight}
-        chartConfig={{
-          ...chartConfig,
-          // Adjust label rotation based on screen width
-          horizontalLabelRotation: dimensions.window.width < 350 ? 60 : 45,
-          // Hide some labels if there are too many
-          skipLabels: dimensions.window.width < 350 ? 1 : 0
-        }}
-        withHorizontalLines={true}
-        withVerticalLines={false} // Remove vertical grid lines for clarity
-        withDots={true}
-        withShadow={false}
-        bezier
-        style={chartStyle}
-        withInnerLines={false} // Simplify chart
-        fromZero
-        segments={3} // Fewer Y-axis segments
-      />
+      <View style={dynamicStyles.chartContainer}>
+        {/* Y-axis label */}
+        <View style={dynamicStyles.yAxisLabelContainer}>
+          <Text style={dynamicStyles.yAxisLabel}>Mood</Text>
+        </View>
+        
+        <LineChart
+          data={data}
+          width={chartWidth}
+          height={chartHeight}
+          chartConfig={{
+            ...chartConfig,
+            // Adjust label rotation based on screen width
+            horizontalLabelRotation: dimensions.window.width < 350 ? 60 : 45,
+            // Hide some labels if there are too many
+            skipLabels: dimensions.window.width < 350 ? 1 : 0
+          }}
+          withHorizontalLines={true}
+          withVerticalLines={true} // Enable vertical grid lines
+          withDots={true}
+          withShadow={false}
+          bezier
+          style={chartStyle}
+          withInnerLines={true} // Enable inner grid lines
+          fromZero
+          segments={3} // Y-axis segments
+          yAxisLabel="" // Empty string before values
+          yAxisSuffix="" // Empty string after values
+        />
+        
+        {/* X-axis label */}
+        <View style={dynamicStyles.axisLabelsContainer}>
+          <Text style={dynamicStyles.xAxisLabel}>Date</Text>
+        </View>
+      </View>
     );
     
     if (timePeriod === TIME_PERIODS.WEEKLY) {
@@ -481,22 +542,23 @@ const ProfileScreen = () => {
         <Text style={styles.title}>My Profile</Text>
         <Text style={styles.subtitle}>Manage your account and preferences</Text>
         
-        {/* SOS Button */}
+        {/* SOS Button with updated styling */}
         <TouchableOpacity 
           style={[
             styles.sosButton, 
             { 
               top: Platform.OS === 'ios' ? 10 : 60,
               right: dimensions.window.width * 0.05
-            }
+            },
+            isSendingSOS && styles.sosButtonActive // Add pulsing effect when sending
           ]}
           onPress={handleSOS}
-          disabled={sosSending}
+          disabled={sosSending || isSendingSOS}
         >
           {sosSending ? (
             <ActivityIndicator size="small" color="white" />
           ) : (
-            <Text style={styles.sosButtonText}>SOS</Text>
+            <Text style={styles.sosButtonText}>CALL</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -579,7 +641,7 @@ const ProfileScreen = () => {
             </View>
             
             <Text style={styles.emergencySubtitle}>
-              If you're experiencing a mental health crisis or need immediate support, please don't hesitate to reach out:
+              If you're experiencing a mental health crisis or need immediate support, you can call your emergency contacts with the CALL button.
             </Text>
             
             <FlatList
@@ -972,7 +1034,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 12,
   },
-  // SOS Button styles
+  // Enhanced SOS button styles
   sosButton: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 50 : 60,
@@ -993,6 +1055,9 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 5,
     zIndex: 100,
+  },
+  sosButtonActive: {
+    backgroundColor: '#d32f2f', // Darker red when active
   },
   sosButtonText: {
     color: 'white',

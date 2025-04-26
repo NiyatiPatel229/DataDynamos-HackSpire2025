@@ -520,6 +520,7 @@ const MindfulActivitiesComponent = ({ selectedMood }) => {
 
   // Complete activity
   const completeActivity = (completed = false) => {
+    console.log("Complete activity called, clearing timer");
     // FIX 1: Make sure to always clear the timer when completing activity
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -558,9 +559,12 @@ const MindfulActivitiesComponent = ({ selectedMood }) => {
       }
     }
     
+    // FIX 2: Reset all activity state variables
+    setTimeRemaining(0);
     setActivityStarted(false);
     setModalVisible(false);
     setSelectedYogaPose(null);
+    setSelectedActivity(null);
   };
 
   // Clean up timer on unmount
@@ -568,6 +572,7 @@ const MindfulActivitiesComponent = ({ selectedMood }) => {
     return () => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
+        timerRef.current = null;
       }
     };
   }, []);
@@ -583,21 +588,21 @@ const MindfulActivitiesComponent = ({ selectedMood }) => {
   const renderIcon = (iconName, iconType) => {
     switch(iconType) {
       case 'ant-design':
-        return <AntDesign name={iconName} size={24} color="#6200ee" />;
+        return <AntDesign name={iconName} size={28} color="#6200ee" />;
       case 'font-awesome-5':
       case 'font-awesome':
-        return <FontAwesome5 name={iconName} size={24} color="#6200ee" />;
+        return <FontAwesome5 name={iconName} size={28} color="#6200ee" />;
       case 'material-community':
-        return <MaterialCommunityIcons name={iconName} size={24} color="#6200ee" />;
+        return <MaterialCommunityIcons name={iconName} size={28} color="#6200ee" />;
       default:
-        return <AntDesign name="questioncircle" size={24} color="#6200ee" />;
+        return <AntDesign name="questioncircle" size={28} color="#6200ee" />;
     }
   };
 
   return (
     <View style={styles.container}>
       {/* User Progress Section */}
-      <View style={styles.progressContainer}>
+      <Animatable.View animation="fadeIn" duration={800} style={styles.progressContainer}>
         <View style={styles.progressItem}>
           <Text style={styles.progressLabel}>Daily Streak</Text>
           <View style={styles.streakContainer}>
@@ -612,45 +617,51 @@ const MindfulActivitiesComponent = ({ selectedMood }) => {
             <Text style={styles.pointsText}>{userPoints}</Text>
           </View>
         </View>
-      </View>
+      </Animatable.View>
       
       {/* Activities List */}
       {activities.map((activity, index) => (
-        <TouchableOpacity 
-          key={index} 
-          style={styles.activityCard}
-          onPress={() => handleActivitySelect(activity)}
+        <Animatable.View 
+          key={index}
+          animation="fadeInUp" 
+          duration={500} 
+          delay={index * 100}
         >
-          <View style={[
-            styles.activityIconContainer,
-            activity.isYoga && styles.yogaIconContainer
-          ]}>
-            {renderIcon(activity.icon, activity.iconType)}
-          </View>
-          <View style={styles.activityContent}>
-            <Text style={styles.activityTitle}>{activity.title}</Text>
-            <Text style={styles.activityDescription} numberOfLines={2}>
-              {activity.description}
-            </Text>
-            <View style={styles.activityMeta}>
-              <View style={styles.metaItem}>
-                <FontAwesome5 name="clock" size={12} color="#6200ee" />
-                <Text style={styles.metaText}>{activity.duration}</Text>
-              </View>
-              <View style={styles.metaItem}>
-                <FontAwesome5 name="star" size={12} color="#6200ee" />
-                <Text style={styles.metaText}>{activity.points} pts</Text>
-              </View>
-              {activity.isYoga && (
-                <View style={styles.metaItem}>
-                  <MaterialCommunityIcons name="yoga" size={12} color="#4CAF50" />
-                  <Text style={[styles.metaText, { color: '#4CAF50' }]}>3D Guide</Text>
-                </View>
-              )}
+          <TouchableOpacity 
+            style={styles.activityCard}
+            onPress={() => handleActivitySelect(activity)}
+          >
+            <View style={[
+              styles.activityIconContainer,
+              activity.isYoga && styles.yogaIconContainer
+            ]}>
+              {renderIcon(activity.icon, activity.iconType)}
             </View>
-          </View>
-          <AntDesign name="right" size={16} color="#6200ee" style={styles.arrowIcon} />
-        </TouchableOpacity>
+            <View style={styles.activityContent}>
+              <Text style={styles.activityTitle}>{activity.title}</Text>
+              <Text style={styles.activityDescription} numberOfLines={2}>
+                {activity.description}
+              </Text>
+              <View style={styles.activityMeta}>
+                <View style={styles.metaItem}>
+                  <FontAwesome5 name="clock" size={12} color="#6200ee" />
+                  <Text style={styles.metaText}>{activity.duration}</Text>
+                </View>
+                <View style={styles.metaItem}>
+                  <FontAwesome5 name="star" size={12} color="#6200ee" />
+                  <Text style={styles.metaText}>{activity.points} pts</Text>
+                </View>
+                {activity.isYoga && (
+                  <View style={[styles.metaItem, {backgroundColor: 'rgba(76, 175, 80, 0.08)'}]}>
+                    <MaterialCommunityIcons name="yoga" size={12} color="#4CAF50" />
+                    <Text style={[styles.metaText, { color: '#4CAF50' }]}>3D Guide</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+            <AntDesign name="right" size={16} color="#6200ee" style={styles.arrowIcon} />
+          </TouchableOpacity>
+        </Animatable.View>
       ))}
       
       {/* Yoga Pose Selection Modal */}
@@ -725,17 +736,17 @@ const MindfulActivitiesComponent = ({ selectedMood }) => {
         visible={modalVisible}
         onRequestClose={() => {
           if (activityStarted) {
-            Alert.alert(
-              "Stop Activity?",
-              "You won't receive points if you stop now.",
-              [
-                { text: "Continue", style: "cancel" },
-                { text: "Stop", onPress: () => completeActivity(false) }
-              ]
-            );
+            // FIX: Bypass the alert and directly stop the activity
+            console.log("Modal back button - stopping activity");
+            if (timerRef.current) {
+              clearInterval(timerRef.current);
+              timerRef.current = null;
+            }
+            completeActivity(false);
           } else {
             setModalVisible(false);
             setSelectedYogaPose(null);
+            setSelectedActivity(null);
           }
         }}
       >
@@ -765,7 +776,13 @@ const MindfulActivitiesComponent = ({ selectedMood }) => {
                   // Active yoga session view
                   <View style={styles.yogaSessionContainer}>
                     <Text style={styles.timerLabel}>Time Remaining</Text>
-                    <Text style={styles.timerText}>{formatTimeRemaining(timeRemaining)}</Text>
+                    <Animatable.Text 
+                      animation="pulse" 
+                      iterationCount="infinite" 
+                      duration={2000} 
+                      style={styles.timerText}>
+                      {formatTimeRemaining(timeRemaining)}
+                    </Animatable.Text>
                     
                     <Animatable.View 
                       animation={avatarAnimation}
@@ -826,14 +843,13 @@ const MindfulActivitiesComponent = ({ selectedMood }) => {
                   <TouchableOpacity 
                     style={[styles.startButton, { backgroundColor: '#e53935' }]}
                     onPress={() => {
-                      Alert.alert(
-                        "Stop Yoga Session?",
-                        "You won't receive points if you stop now.",
-                        [
-                          { text: "Continue", style: "cancel" },
-                          { text: "Stop", onPress: () => completeActivity(false) }
-                        ]
-                      );
+                      // FIX: Bypass the alert and directly stop the activity
+                      console.log("Stop Yoga Session button pressed");
+                      if (timerRef.current) {
+                        clearInterval(timerRef.current);
+                        timerRef.current = null;
+                      }
+                      completeActivity(false);
                     }}
                   >
                     <Text style={styles.startButtonText}>Stop Session</Text>
@@ -868,7 +884,13 @@ const MindfulActivitiesComponent = ({ selectedMood }) => {
                 {activityStarted ? (
                   <View style={styles.timerContainer}>
                     <Text style={styles.timerLabel}>Time Remaining</Text>
-                    <Text style={styles.timerText}>{formatTimeRemaining(timeRemaining)}</Text>
+                    <Animatable.Text 
+                      animation="pulse" 
+                      iterationCount="infinite" 
+                      duration={2000} 
+                      style={styles.timerText}>
+                      {formatTimeRemaining(timeRemaining)}
+                    </Animatable.Text>
                     <Text style={styles.modalDescription}>Keep going! You're doing great with your {selectedActivity.title} activity.</Text>
                   </View>
                 ) : (
@@ -891,14 +913,13 @@ const MindfulActivitiesComponent = ({ selectedMood }) => {
                   <TouchableOpacity 
                     style={[styles.startButton, { backgroundColor: '#e53935' }]}
                     onPress={() => {
-                      Alert.alert(
-                        "Stop Activity?",
-                        "You won't receive points if you stop now.",
-                        [
-                          { text: "Continue", style: "cancel" },
-                          { text: "Stop", onPress: () => completeActivity(false) }
-                        ]
-                      );
+                      // FIX: Bypass the alert and directly stop the activity
+                      console.log("Stop Activity button pressed");
+                      if (timerRef.current) {
+                        clearInterval(timerRef.current);
+                        timerRef.current = null;
+                      }
+                      completeActivity(false);
                     }}
                   >
                     <Text style={styles.startButtonText}>Stop Activity</Text>
@@ -930,80 +951,96 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 15,
-    padding: 15,
+    padding: 20,
     backgroundColor: 'white',
-    borderRadius: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
+    borderRadius: 16,
+    shadowColor: '#9370DB',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(147, 112, 219, 0.1)',
   },
   progressItem: {
     alignItems: 'center',
   },
   progressLabel: {
-    fontSize: 12,
+    fontSize: 13,
+    fontWeight: '500',
     color: '#666',
-    marginBottom: 5,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   streakContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: 'rgba(255, 149, 0, 0.08)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
   },
   streakText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#333',
-    marginLeft: 5,
+    color: '#FF9500',
+    marginLeft: 8,
   },
   pointsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: 'rgba(255, 215, 0, 0.08)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
   },
   pointsText: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#333',
-    marginLeft: 5,
+    color: '#FFD700',
+    marginLeft: 8,
   },
   activityCard: {
     flexDirection: 'row',
     backgroundColor: 'white',
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 14,
+    shadowColor: '#9370DB',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 5,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(147, 112, 219, 0.08)',
   },
   activityIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#f0e6ff',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(98, 0, 238, 0.08)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 15,
+    marginRight: 16,
   },
   yogaIconContainer: {
-    backgroundColor: '#e8f5e9',
+    backgroundColor: 'rgba(76, 175, 80, 0.08)',
   },
   activityContent: {
     flex: 1,
   },
   activityTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: 'bold',
     color: '#333',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   activityDescription: {
     fontSize: 14,
     color: '#666',
-    marginBottom: 8,
+    marginBottom: 10,
+    lineHeight: 20,
   },
   activityMeta: {
     flexDirection: 'row',
@@ -1012,15 +1049,24 @@ const styles = StyleSheet.create({
   metaItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 15,
+    backgroundColor: 'rgba(98, 0, 238, 0.05)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
   metaText: {
     fontSize: 12,
-    color: '#666',
+    fontWeight: '500',
+    color: '#6200ee',
     marginLeft: 4,
   },
   arrowIcon: {
     alignSelf: 'center',
+    backgroundColor: 'rgba(98, 0, 238, 0.08)',
+    padding: 8,
+    borderRadius: 20,
+    marginLeft: 5,
   },
   modalContainer: {
     flex: 1,
@@ -1029,190 +1075,250 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     backgroundColor: 'white',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
     maxHeight: '90%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -5 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 10,
   },
   yogaModalContent: {
     backgroundColor: 'white',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
     maxHeight: '90%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -5 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 10,
   },
   modalHeader: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginBottom: 10,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
   },
   closeButton: {
-    padding: 5,
+    padding: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+    borderRadius: 20,
   },
   yogaModalTitle: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#4CAF50',
-    marginBottom: 5,
+    marginBottom: 8,
+    textAlign: 'center',
+    flex: 1,
   },
   yogaModalSubtitle: {
     fontSize: 16,
     color: '#666',
-    marginBottom: 15,
+    marginBottom: 20,
+    textAlign: 'center',
+    paddingHorizontal: 10,
+    lineHeight: 22,
   },
   yogaList: {
     maxHeight: '80%',
   },
   yogaPoseCard: {
     backgroundColor: 'white',
-    borderRadius: 12,
-    marginBottom: 15,
-    padding: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    borderRadius: 16,
+    marginBottom: 16,
+    padding: 18,
+    shadowColor: '#4CAF50',
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
+    shadowRadius: 6,
+    elevation: 3,
     borderWidth: 1,
-    borderColor: '#e8f5e9',
+    borderColor: 'rgba(76, 175, 80, 0.1)',
   },
   yogaPoseCardContent: {
     flexDirection: 'row',
   },
   yogaPoseIconContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#e8f5e9',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(76, 175, 80, 0.08)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 15,
+    marginRight: 16,
   },
   yogaPoseInfo: {
     flex: 1,
   },
   yogaPoseName: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#333',
-    marginBottom: 2,
+    marginBottom: 4,
   },
   yogaPoseSanskrit: {
-    fontSize: 13,
+    fontSize: 14,
     fontStyle: 'italic',
     color: '#666',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   yogaPoseDescription: {
     fontSize: 14,
     color: '#666',
-    marginBottom: 6,
+    marginBottom: 8,
+    lineHeight: 20,
   },
   yogaPoseMeta: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
   },
   yogaPoseMetaItem: {
     flexDirection: 'row',
     alignItems: 'center',
     marginRight: 12,
+    marginBottom: 4,
+    backgroundColor: 'rgba(76, 175, 80, 0.08)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
   yogaPoseMetaText: {
     fontSize: 12,
+    fontWeight: '500',
     color: '#4CAF50',
     marginLeft: 4,
   },
   modalIconContainer: {
     alignSelf: 'center',
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#f0e6ff',
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: 'rgba(98, 0, 238, 0.08)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 15,
+    marginBottom: 20,
+    shadowColor: '#6200ee',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   modalTitle: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#333',
     textAlign: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   modalSanskritName: {
     fontSize: 16,
     fontStyle: 'italic',
     color: '#666',
     textAlign: 'center',
-    marginBottom: 15,
+    marginBottom: 20,
   },
   modalDescription: {
     fontSize: 16,
-    color: '#666',
-    marginBottom: 20,
+    color: '#555',
+    marginBottom: 24,
     lineHeight: 24,
+    textAlign: 'center',
   },
   modalMeta: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginBottom: 25,
+    marginBottom: 28,
   },
   modalMetaItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 10,
+    marginHorizontal: 12,
+    backgroundColor: 'rgba(98, 0, 238, 0.08)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
   },
   modalMetaText: {
     fontSize: 14,
+    fontWeight: '500',
     color: '#6200ee',
-    marginLeft: 6,
+    marginLeft: 8,
   },
   startButton: {
     backgroundColor: '#6200ee',
-    borderRadius: 10,
-    padding: 15,
+    borderRadius: 16,
+    padding: 16,
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 16,
+    shadowColor: '#6200ee',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 4,
   },
   startButtonText: {
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+    letterSpacing: 0.5,
   },
   timerContainer: {
     alignItems: 'center',
-    marginVertical: 15,
+    marginVertical: 24,
+    backgroundColor: 'rgba(98, 0, 238, 0.05)',
+    padding: 20,
+    borderRadius: 16,
   },
   timerLabel: {
-    fontSize: 14,
+    fontSize: 15,
+    fontWeight: '500',
     color: '#666',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   timerText: {
-    fontSize: 32,
+    fontSize: 48,
     fontWeight: 'bold',
     color: '#6200ee',
-    marginVertical: 10,
+    marginVertical: 12,
+    fontVariant: ['tabular-nums'],
   },
   yogaSessionContainer: {
     alignItems: 'center',
-    marginVertical: 10,
+    marginVertical: 16,
+    backgroundColor: 'rgba(76, 175, 80, 0.05)',
+    padding: 20,
+    borderRadius: 16,
   },
   yogaAvatarContainer: {
     width: width * 0.8,
     height: width * 0.8,
     justifyContent: 'center',
     alignItems: 'center',
-    marginVertical: 15,
+    marginVertical: 20,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(76, 175, 80, 0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(76, 175, 80, 0.1)',
   },
   yogaAvatar: {
-    width: '100%',
-    height: '100%',
+    width: '90%',
+    height: '90%',
   },
   yogaInstructionText: {
     fontSize: 16,
-    color: '#666',
+    color: '#555',
     textAlign: 'center',
-    marginVertical: 10,
+    marginVertical: 12,
+    lineHeight: 24,
+    fontStyle: 'italic',
   },
   yogaAvatarPreviewContainer: {
     width: width * 0.6,
@@ -1220,60 +1326,74 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     justifyContent: 'center',
     alignItems: 'center',
-    marginVertical: 15,
+    marginVertical: 20,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(76, 175, 80, 0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(76, 175, 80, 0.1)',
   },
   yogaAvatarPreview: {
-    width: '100%',
-    height: '100%',
+    width: '90%',
+    height: '90%',
   },
   yogaPoseDetailDescription: {
     fontSize: 16,
-    color: '#666',
-    marginBottom: 15,
+    color: '#555',
+    marginBottom: 20,
     lineHeight: 24,
+    textAlign: 'center',
+    paddingHorizontal: 10,
   },
   benefitsContainer: {
-    marginBottom: 15,
+    marginBottom: 20,
+    backgroundColor: 'rgba(76, 175, 80, 0.05)',
+    padding: 16,
+    borderRadius: 16,
   },
   benefitsTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#333',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   benefitItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 5,
+    marginBottom: 8,
   },
   benefitText: {
-    fontSize: 14,
-    color: '#666',
-    marginLeft: 8,
+    fontSize: 15,
+    color: '#555',
+    marginLeft: 10,
+    lineHeight: 22,
   },
   targetAreasContainer: {
-    marginBottom: 20,
+    marginBottom: 24,
   },
   targetAreasTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#333',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   targetAreaTags: {
     flexDirection: 'row',
     flexWrap: 'wrap',
   },
   targetAreaTag: {
-    backgroundColor: '#e8f5e9',
-    borderRadius: 15,
-    paddingVertical: 5,
-    paddingHorizontal: 12,
-    marginRight: 8,
-    marginBottom: 8,
+    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    marginRight: 10,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(76, 175, 80, 0.2)',
   },
   targetAreaText: {
-    fontSize: 12,
+    fontSize: 13,
+    fontWeight: '500',
     color: '#4CAF50',
   }
 });
