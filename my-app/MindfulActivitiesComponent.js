@@ -684,11 +684,11 @@ const MindfulActivitiesComponent = ({ selectedMood }) => {
                   onPress={() => handleYogaPoseSelect(pose)}
                 >
                   <View style={styles.yogaPoseCardContent}>
-                    <Image 
+                    {/* <Image 
                       source={pose.imagePath}
                       style={styles.yogaPoseImage}
                       resizeMode="cover"
-                    />
+                    /> */}
                     <View style={styles.yogaPoseInfo}>
                       <Text style={styles.yogaPoseName}>{pose.name}</Text>
                       <Text style={styles.yogaPoseSanskrit}>{pose.sanskritName}</Text>
