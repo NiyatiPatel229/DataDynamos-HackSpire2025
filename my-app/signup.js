@@ -11,7 +11,8 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { auth } from './firebase';
+import { auth, db } from './firebase';
+import { ref, set } from 'firebase/database';  // Import Realtime Database functions
 
 const SignupScreen = ({ navigation }) => {
   const [name, setName] = useState('');
@@ -38,14 +39,30 @@ const SignupScreen = ({ navigation }) => {
 
     setLoading(true);
     try {
+      // Create user authentication
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       await updateProfile(userCredential.user, { displayName: name });
+      
+      // Save user data to Realtime Database
+      const userId = userCredential.user.uid;
+      const userData = {
+        name: name,
+        email: email,
+        createdAt: new Date().toISOString(),
+        // Add any additional user data you want to store
+      };
+      
+      // Create a reference to the users node and set the user data
+      await set(ref(db, 'users/' + userId), userData);
+      
       // No need to navigate, App.js will handle routing based on auth state
+      console.log("User created and data saved successfully");
     } catch (error) {
       let errorMessage = 'Registration failed. Please try again.';
       if (error.code === 'auth/email-already-in-use') {
         errorMessage = 'This email is already registered';
       }
+      console.error("Signup error:", error);
       Alert.alert('Error', errorMessage);
       setLoading(false);
     }
