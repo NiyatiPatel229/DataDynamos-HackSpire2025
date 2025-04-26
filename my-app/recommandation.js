@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity } from 'react-native';
-import MindfulActivitiesComponent from './MindfulActivitiesComponent'; // Import the new component
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, StatusBar } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import MindfulActivitiesComponent from './MindfulActivitiesComponent';
+import { auth, db } from './firebase'; // Import Firebase
+import { ref, onValue } from 'firebase/database'; // Import database methods
 
 // Dataset for mood-based recommendations
 const moodData = {
@@ -20,6 +23,7 @@ const moodData = {
       { title: "Sing Street", year: "2016", genre: "Comedy/Drama" },
     ]
   },
+  // ...other mood data remains the same
   sad: {
     music: [
       { title: "Here Comes the Sun", artist: "The Beatles" },
@@ -166,17 +170,97 @@ const moodData = {
   }
 };
 
+// Sentiment to mood mapping
+const sentimentToMood = {
+  positive: ['happy', 'energetic', 'inspired'],
+  neutral: ['relaxed', 'focused', 'nostalgic'],
+  negative: ['sad', 'anxious', 'angry']
+};
+
+// Map sentiment score to specific mood (simplified ML approach)
+const mapSentimentToMood = (sentiment, score) => {
+  if (!sentiment || !sentimentToMood[sentiment]) {
+    return 'happy'; // Default fallback
+  }
+  
+  const moods = sentimentToMood[sentiment];
+  
+  // Use the score to determine which specific mood within the sentiment category
+  // For positive sentiment: higher score = more energetic/inspired
+  // For negative sentiment: lower score = more anxious/angry
+  // For neutral: score near 0 = relaxed, slight positive = focused, slight negative = nostalgic
+  
+  if (sentiment === 'positive') {
+    if (score > 0.7) return 'inspired';
+    if (score > 0.3) return 'energetic';
+    return 'happy';
+  } 
+  else if (sentiment === 'negative') {
+    if (score < -0.7) return 'angry';
+    if (score < -0.3) return 'anxious';
+    return 'sad';
+  }
+  else { // neutral
+    if (score > 0.1) return 'focused';
+    if (score < -0.1) return 'nostalgic';
+    return 'relaxed';
+  }
+};
+
+// Mood icons mapping - can be replaced with proper icon imports
+const moodIcons = {
+  happy: '😊',
+  sad: '😢',
+  energetic: '⚡',
+  relaxed: '😌',
+  anxious: '😰',
+  romantic: '❤️',
+  focused: '🧠',
+  nostalgic: '🕰️',
+  angry: '😡',
+  inspired: '💡'
+};
+
 const RecommendationScreen = () => {
   const [selectedMood, setSelectedMood] = useState('happy');
+  const [detectedMood, setDetectedMood] = useState(null);
+  const [currentSentiment, setCurrentSentiment] = useState({ sentiment: 'neutral', score: 0 });
   const [musicRecommendations, setMusicRecommendations] = useState(moodData.happy.music);
   const [movieRecommendations, setMovieRecommendations] = useState(moodData.happy.movies);
+  const [autoMode, setAutoMode] = useState(true); // Default to automatic mode
   
   const moods = [
     'happy', 'sad', 'energetic', 'relaxed', 'anxious',
     'romantic', 'focused', 'nostalgic', 'angry', 'inspired'
   ];
   
-  // Update recommendations when mood changes
+  // Load current mood from Firebase when component mounts
+  useEffect(() => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+    
+    const currentMoodRef = ref(db, `userMoods/${currentUser.uid}/currentMood`);
+    const unsubscribe = onValue(currentMoodRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const moodData = snapshot.val();
+        setCurrentSentiment(moodData);
+        
+        // Determine mood based on sentiment data
+        const mappedMood = mapSentimentToMood(moodData.sentiment, moodData.score);
+        setDetectedMood(mappedMood);
+        
+        // In auto mode, update the selected mood
+        if (autoMode) {
+          setSelectedMood(mappedMood);
+        }
+      }
+    });
+    
+    // Cleanup the listener when component unmounts
+    return () => unsubscribe();
+  }, [autoMode]);
+  
+  // Update recommendations when selected mood changes
   useEffect(() => {
     if (moodData[selectedMood]) {
       setMusicRecommendations(moodData[selectedMood].music);
@@ -184,179 +268,523 @@ const RecommendationScreen = () => {
     }
   }, [selectedMood]);
 
+  // Function to generate subtle gradient colors based on selected mood
+  const getMoodGradient = () => {
+    const baseColor = '#9370DB'; // Medium Purple theme color
+    
+    // Lighter and darker variants for different moods
+    const moodColorMaps = {
+      happy: ['#9370DB', '#A67EEA'],
+      sad: ['#9370DB', '#8160C4'],
+      energetic: ['#9370DB', '#B28AEF'],
+      relaxed: ['#9370DB', '#856AC7'],
+      anxious: ['#9370DB', '#7D5CCA'],
+      romantic: ['#9370DB', '#A989E3'],
+      focused: ['#9370DB', '#7F5CD1'],
+      nostalgic: ['#9370DB', '#8E6BD6'],
+      angry: ['#9370DB', '#7C5BB9'],
+      inspired: ['#9370DB', '#AB87EB']
+    };
+    
+    return moodColorMaps[selectedMood] || ['#9370DB', '#B395FF'];
+  };
+
+  // Toggle between auto and manual mood selection
+  const toggleMoodSelectionMode = () => {
+    setAutoMode(!autoMode);
+    if (!autoMode && detectedMood) {
+      // When switching to auto mode, update selected mood to detected mood
+      setSelectedMood(detectedMood);
+    }
+  };
+
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Recommendations</Text>
-        <Text style={styles.subtitle}>Personalized wellness suggestions</Text>
-      </View>
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#9370DB" />
       
-      <View style={styles.contentContainer}>
-        {/* Mood Selector */}
-        <Text style={styles.moodPrompt}>How are you feeling today?</Text>
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false} 
-          style={styles.moodScrollView}
-        >
-          {moods.map((mood) => (
-            <TouchableOpacity
-              key={mood}
-              style={[
-                styles.moodButton,
-                selectedMood === mood && styles.selectedMoodButton
-              ]}
-              onPress={() => setSelectedMood(mood)}
-            >
-              <Text 
-                style={[
-                  styles.moodButtonText,
-                  selectedMood === mood && styles.selectedMoodButtonText
-                ]}
-              >
-                {mood.charAt(0).toUpperCase() + mood.slice(1)}
+      {/* Header with gradient */}
+      <LinearGradient
+        colors={getMoodGradient()}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.header}
+      >
+        <View style={styles.headerContent}>
+          <Text style={styles.title}>Mood Wellness</Text>
+          <Text style={styles.subtitle}>Personalized recommendations for your well-being</Text>
+        </View>
+      </LinearGradient>
+      
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        <View style={styles.contentContainer}>
+          {/* Auto-detected Mood Display */}
+          <View style={styles.detectedMoodContainer}>
+            <View style={styles.detectedMoodHeader}>
+              <Text style={styles.detectedMoodTitle}>
+                {autoMode ? "Currently Recommending For Your Mood:" : "Current Detected Mood:"}
               </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-        
-        {/* Music Recommendations */}
-        <Text style={styles.sectionTitle}>Music Recommendations</Text>
-        <View style={styles.recommendationsBox}>
-          {musicRecommendations.map((item, index) => (
-            <View key={index} style={styles.recommendationItem}>
-              <Text style={styles.itemTitle}>{item.title}</Text>
-              <Text style={styles.itemSubtitle}>{item.artist}</Text>
+              <TouchableOpacity onPress={toggleMoodSelectionMode} style={styles.modeToggleButton}>
+                <Text style={styles.modeToggleText}>
+                  {autoMode ? "Switch to Manual" : "Use Detected Mood"}
+                </Text>
+              </TouchableOpacity>
             </View>
-          ))}
-        </View>
-        
-        {/* Movie Recommendations */}
-        <Text style={styles.sectionTitle}>Movies & Shows</Text>
-        <View style={styles.recommendationsBox}>
-          {movieRecommendations.map((item, index) => (
-            <View key={index} style={styles.recommendationItem}>
-              <Text style={styles.itemTitle}>{item.title} ({item.year})</Text>
-              <Text style={styles.itemSubtitle}>{item.genre}</Text>
+            
+            {detectedMood && (
+              <View style={styles.detectedMoodContent}>
+                <View style={[
+                  styles.moodEmojiContainer, 
+                  { backgroundColor: getMoodGradient()[0] }
+                ]}>
+                  <Text style={styles.moodEmoji}>{moodIcons[detectedMood]}</Text>
+                </View>
+                <Text style={styles.detectedMoodText}>
+                  {detectedMood.charAt(0).toUpperCase() + detectedMood.slice(1)}
+                </Text>
+              </View>
+            )}
+          </View>
+          
+          {/* Mood Selector - Only visible in manual mode */}
+          {!autoMode && (
+            <View style={styles.moodSection}>
+              <Text style={styles.moodPrompt}>Select a different mood:</Text>
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false} 
+                style={styles.moodScrollView}
+                contentContainerStyle={styles.moodButtonsContainer}
+              >
+                {moods.map((mood) => (
+                  <TouchableOpacity
+                    key={mood}
+                    style={[
+                      styles.moodButton,
+                      selectedMood === mood && styles.selectedMoodButton
+                    ]}
+                    onPress={() => setSelectedMood(mood)}
+                  >
+                    <Text style={styles.moodIcon}>{moodIcons[mood]}</Text>
+                    <Text 
+                      style={[
+                        styles.moodButtonText,
+                        selectedMood === mood && styles.selectedMoodButtonText
+                      ]}
+                    >
+                      {mood.charAt(0).toUpperCase() + mood.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             </View>
-          ))}
+          )}
+          
+          {/* Music Recommendations */}
+          <View style={styles.sectionContainer}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>Music For You</Text>
+              <TouchableOpacity style={styles.viewAllButton}>
+                <Text style={styles.viewAllText}>View All</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.recommendationsBox}>
+              {musicRecommendations.map((item, index) => (
+                <View key={index} style={styles.recommendationItem}>
+                  <View style={styles.musicIconContainer}>
+                    <Text style={styles.musicIcon}>🎵</Text>
+                  </View>
+                  <View style={styles.itemContent}>
+                    <Text style={styles.itemTitle} numberOfLines={1}>{item.title}</Text>
+                    <Text style={styles.itemSubtitle} numberOfLines={1}>{item.artist}</Text>
+                  </View>
+                  <TouchableOpacity style={styles.playButton}>
+                    <Text>▶️</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          </View>
+          
+          {/* Movie Recommendations */}
+          <View style={styles.sectionContainer}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>Movies & Shows</Text>
+              <TouchableOpacity style={styles.viewAllButton}>
+                <Text style={styles.viewAllText}>View All</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.recommendationsBox}>
+              {movieRecommendations.map((item, index) => (
+                <View key={index} style={styles.recommendationItem}>
+                  <View style={styles.movieIconContainer}>
+                    <Text style={styles.movieIcon}>🎬</Text>
+                  </View>
+                  <View style={styles.itemContent}>
+                    <Text style={styles.itemTitle} numberOfLines={1}>{item.title} ({item.year})</Text>
+                    <Text style={styles.itemSubtitle} numberOfLines={1}>{item.genre}</Text>
+                  </View>
+                  <TouchableOpacity style={styles.infoButton}>
+                    <Text>ℹ️</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          </View>
+          
+          {/* Books Section with Enhanced UI */}
+          <View style={styles.sectionContainer}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>Books & Reading</Text>
+              <TouchableOpacity style={styles.viewAllButton}>
+                <Text style={styles.viewAllText}>Coming Soon</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.comingSoonBox}>
+              <Text style={styles.comingSoonIcon}>📚</Text>
+              <Text style={styles.comingSoonText}>
+                Book recommendations tailored to your mood are coming soon.
+              </Text>
+              <TouchableOpacity style={styles.notifyButton}>
+                <Text style={styles.notifyButtonText}>Notify Me</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          
+          {/* Mindful Activities */}
+          <View style={styles.sectionContainer}>
+            <Text style={styles.sectionTitle}>Mindful Activities</Text>
+            <MindfulActivitiesComponent selectedMood={selectedMood} />
+          </View>
+          
+          {/* Daily Quote - New Addition */}
+          <View style={styles.quoteContainer}>
+            <LinearGradient
+              colors={['rgba(147, 112, 219, 0.7)', 'rgba(147, 112, 219, 0.3)']}
+              style={styles.quoteGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <Text style={styles.quoteText}>
+                "Happiness can be found even in the darkest of times, if one only remembers to turn on the light."
+              </Text>
+              <Text style={styles.quoteAuthor}>- Albus Dumbledore</Text>
+            </LinearGradient>
+          </View>
+          
         </View>
-        
-        {/* Placeholder sections */}
-        <Text style={styles.sectionTitle}>Books & Reading</Text>
-        <View style={styles.placeholderBox}>
-          <Text style={styles.placeholderText}>
-            Book recommendations will appear here.
-          </Text>
-        </View>
-        
-        {/* Mindful Activities - replaced placeholder with the new component */}
-        <Text style={styles.sectionTitle}>Mindful Activities</Text>
-        <MindfulActivitiesComponent selectedMood={selectedMood} />
-        
-      </View>
-    </ScrollView>
+      </ScrollView>
+      
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f8f8',
+    backgroundColor: '#f8f9fa',
   },
   header: {
-    backgroundColor: '#6200ee',
-    padding: 20,
     paddingTop: 60,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
+    paddingBottom: 25,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    overflow: 'hidden',
+  },
+  headerContent: {
+    paddingHorizontal: 20,
   },
   title: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: 'bold',
     color: 'white',
+    marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: 'white',
-    marginTop: 5,
+    color: 'rgba(255, 255, 255, 0.9)',
+  },
+  scrollView: {
+    flex: 1,
   },
   contentContainer: {
+    padding: 16,
+    paddingBottom: 30,
+  },
+  // New styles for auto-detected mood
+  detectedMoodContainer: {
+    backgroundColor: 'white',
+    borderRadius: 16,
     padding: 20,
+    marginBottom: 24,
+    shadowColor: '#9370DB',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  detectedMoodHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  detectedMoodTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#444',
+  },
+  modeToggleButton: {
+    backgroundColor: 'rgba(147, 112, 219, 0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  modeToggleText: {
+    color: '#9370DB',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  detectedMoodContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  moodEmojiContainer: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  moodEmoji: {
+    fontSize: 24,
+    color: 'white',
+  },
+  detectedMoodText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  // Original mood selection styles
+  moodSection: {
+    marginTop: 5,
+    marginBottom: 20,
   },
   moodPrompt: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '600',
     color: '#333',
-    marginTop: 10,
-    marginBottom: 12,
+    marginBottom: 16,
+    marginLeft: 5,
   },
   moodScrollView: {
-    marginBottom: 20,
+    marginBottom: 5,
+  },
+  moodButtonsContainer: {
+    paddingVertical: 5,
+    paddingHorizontal: 5,
   },
   moodButton: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    marginRight: 10,
-    borderRadius: 20,
-    backgroundColor: '#e0e0e0',
+    paddingVertical: 12,
+    marginRight: 12,
+    borderRadius: 18,
+    backgroundColor: '#f0f0f0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   selectedMoodButton: {
-    backgroundColor: '#6200ee',
+    backgroundColor: '#9370DB',
+  },
+  moodIcon: {
+    fontSize: 16,
+    marginRight: 8,
   },
   moodButtonText: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#333',
+    color: '#555',
   },
   selectedMoodButtonText: {
     color: 'white',
+    fontWeight: '600',
+  },
+  sectionContainer: {
+    marginBottom: 24,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
-    marginTop: 20,
-    marginBottom: 10,
     color: '#333',
   },
+  viewAllButton: {
+    padding: 5,
+  },
+  viewAllText: {
+    color: '#9370DB',
+    fontWeight: '500',
+    fontSize: 14,
+  },
   recommendationsBox: {
-    marginBottom: 15,
+    borderRadius: 12,
+    overflow: 'hidden',
   },
   recommendationItem: {
     backgroundColor: 'white',
-    borderRadius: 10,
-    padding: 15,
+    borderRadius: 12,
+    padding: 16,
     marginBottom: 10,
-    shadowColor: '#000',
+    shadowColor: '#9370DB',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 2,
+    elevation: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  musicIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(147, 112, 219, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  musicIcon: {
+    fontSize: 20,
+  },
+  movieIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(147, 112, 219, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  movieIcon: {
+    fontSize: 20,
+  },
+  itemContent: {
+    flex: 1,
   },
   itemTitle: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
     color: '#333',
+    marginBottom: 4,
   },
   itemSubtitle: {
     fontSize: 14,
     color: '#666',
-    marginTop: 4,
   },
-  placeholderBox: {
+  playButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(147, 112, 219, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  infoButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(147, 112, 219, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  comingSoonBox: {
     backgroundColor: 'white',
-    borderRadius: 10,
-    padding: 20,
-    marginBottom: 15,
-    shadowColor: '#000',
+    borderRadius: 12,
+    padding: 25,
+    alignItems: 'center',
+    shadowColor: '#9370DB',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 2,
+    elevation: 3,
   },
-  placeholderText: {
-    color: '#666',
+  comingSoonIcon: {
+    fontSize: 40,
+    marginBottom: 15,
+  },
+  comingSoonText: {
+    fontSize: 16,
+    color: '#555',
     textAlign: 'center',
+    marginBottom: 20,
+  },
+  notifyButton: {
+    backgroundColor: '#9370DB',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 25,
+  },
+  notifyButtonText: {
+    color: 'white',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  quoteContainer: {
+    marginTop: 10,
+    marginBottom: 20,
+  },
+  quoteGradient: {
+    borderRadius: 15,
+    padding: 20,
+    shadowColor: '#9370DB',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 5,
+  },
+  quoteText: {
+    fontSize: 16,
+    fontStyle: 'italic',
+    color: '#fff',
+    textAlign: 'center',
+    marginBottom: 10,
+    lineHeight: 24,
+  },
+  quoteAuthor: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#fff',
+    textAlign: 'right',
+  },
+  fab: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#9370DB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 5,
+  },
+  fabIcon: {
+    fontSize: 24,
+    color: 'white',
+    fontWeight: 'bold',
   },
 });
 

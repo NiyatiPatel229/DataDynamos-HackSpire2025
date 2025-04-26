@@ -12,7 +12,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   Modal,
-  SafeAreaView
+  SafeAreaView,
+  Image,
+  Dimensions
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Icon from 'react-native-vector-icons/MaterialIcons';
@@ -23,6 +25,14 @@ import { ref, push, set, onValue, remove, query, orderByChild, equalTo, limitToL
 import axios from 'axios';
 
 // You'll need to install: expo-linear-gradient, expo-speech, @react-native-voice/voice, axios
+
+const { width } = Dimensions.get('window');
+const primaryColor = '#9370DB'; // Medium Purple
+const secondaryColor = '#7B68EE'; // Medium Slate Blue
+const accentColor = '#B19CD9'; // Light Purple
+const darkAccent = '#6A5ACD'; // Slate Blue
+const lightBackground = '#F8F7FF'; // Very Light Purple
+const cardBackground = '#FFFFFF'; // White
 
 const HomeScreen = () => {
   // State for home screen
@@ -42,6 +52,36 @@ const HomeScreen = () => {
   
   // Replace with your actual Gemini API key
   const GEMINI_API_KEY = 'AIzaSyA9pusWPVjr2NOPwrEO6Ry-uUzJzfRb2d4';
+  
+  // Sentiment to mood mapping (same as in recommandation.js)
+  const sentimentToMood = {
+    positive: ['happy', 'energetic', 'inspired'],
+    neutral: ['relaxed', 'focused', 'nostalgic'],
+    negative: ['sad', 'anxious', 'angry']
+  };
+  
+  // Map sentiment score to mood (simplified ML approach - same as in recommandation.js)
+  const mapSentimentToMood = (sentiment, score) => {
+    if (!sentiment || !sentimentToMood[sentiment]) {
+      return 'happy'; // Default fallback
+    }
+    
+    if (sentiment === 'positive') {
+      if (score > 0.7) return 'inspired';
+      if (score > 0.3) return 'energetic';
+      return 'happy';
+    } 
+    else if (sentiment === 'negative') {
+      if (score < -0.7) return 'angry';
+      if (score < -0.3) return 'anxious';
+      return 'sad';
+    }
+    else { // neutral
+      if (score > 0.1) return 'focused';
+      if (score < -0.1) return 'nostalgic';
+      return 'relaxed';
+    }
+  };
   
   // Initial bot message - only if no history exists
   useEffect(() => {
@@ -377,7 +417,9 @@ const HomeScreen = () => {
     const timestamp = new Date().getTime();
     const moodData = {
       ...sentimentResult,
-      timestamp
+      timestamp,
+      // Add a mapped mood for recommendations
+      mappedMood: mapSentimentToMood(sentimentResult.sentiment, sentimentResult.score)
     };
     
     try {
@@ -496,6 +538,18 @@ const HomeScreen = () => {
         styles.messageContainer,
         isBot ? styles.botMessageContainer : styles.userMessageContainer
       ]}>
+        {isBot && (
+          <View style={styles.avatarContainer}>
+            <LinearGradient
+              colors={[primaryColor, secondaryColor]}
+              style={styles.avatarGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <Text style={styles.avatarText}>AI</Text>
+            </LinearGradient>
+          </View>
+        )}
         <View style={[
           styles.messageBubble,
           isBot ? styles.botMessageBubble : styles.userMessageBubble
@@ -515,11 +569,23 @@ const HomeScreen = () => {
               <Icon 
                 name={isSpeaking ? "volume-off" : "volume-up"} 
                 size={20} 
-                color="#6200ee" 
+                color={primaryColor} 
               />
             </TouchableOpacity>
           )}
         </View>
+        {!isBot && (
+          <View style={styles.userAvatarContainer}>
+            <LinearGradient
+              colors={[secondaryColor, darkAccent]}
+              style={styles.userAvatarGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <Text style={styles.avatarText}>You</Text>
+            </LinearGradient>
+          </View>
+        )}
       </View>
     );
   };
@@ -536,82 +602,204 @@ const HomeScreen = () => {
         return '😐';
     }
   };
+  
+  // Get emoji for mapped mood
+  const getMappedMoodEmoji = (mappedMood) => {
+    const moodIcons = {
+      happy: '😊',
+      sad: '😢',
+      energetic: '⚡',
+      relaxed: '😌',
+      anxious: '😰',
+      romantic: '❤️',
+      focused: '🧠',
+      nostalgic: '🕰️',
+      angry: '😡',
+      inspired: '💡'
+    };
+    return moodIcons[mappedMood] || '😐';
+  };
 
   // Format timestamp to readable date
   const formatTimestamp = (timestamp) => {
     const date = new Date(timestamp);
-    return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
+    return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+  };
+
+  // Generate a greeting based on time of day
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Good Morning";
+    if (hour < 18) return "Good Afternoon";
+    return "Good Evening";
+  };
+
+  // Wellness tips array
+  const wellnessTips = [
+    "Practice deep breathing for 5 minutes when feeling stressed.",
+    "Take short breaks to stretch throughout your day.",
+    "Try to get 7-8 hours of sleep tonight for better mental clarity.",
+    "Spend a few minutes in nature to boost your mood.",
+    "Stay hydrated - drink at least 8 glasses of water today.",
+    "Practice gratitude by noting three things you're thankful for.",
+    "Limit screen time before bed for better sleep quality.",
+    "Connect with a friend or loved one today."
+  ];
+
+  // Get random wellness tip
+  const getRandomTip = () => {
+    const randomIndex = Math.floor(Math.random() * wellnessTips.length);
+    return wellnessTips[randomIndex];
   };
 
   // Main Home Screen Render
   return (
     <View style={styles.container}>
-      <ScrollView style={styles.scrollContainer}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Welcome to MindMosaic</Text>
-          <Text style={styles.subtitle}>How are you feeling today?</Text>
+      <LinearGradient
+        colors={[primaryColor, secondaryColor, darkAccent]}
+        style={styles.headerGradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      >
+        <View style={styles.headerContent}>
+          <Text style={styles.greeting}>{getGreeting()}</Text>
+          <Text style={styles.title}>MindMosaic</Text>
+          <Text style={styles.subtitle}>Your Mental Wellness Companion</Text>
         </View>
-        
+      </LinearGradient>
+
+      <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         <View style={styles.contentContainer}>
-          <Text style={styles.sectionTitle}>Daily Check-in</Text>
-          
-          <TouchableOpacity 
-            onPress={() => setShowChatbot(true)}
-            style={styles.chatbotContainer}
-          >
-            <LinearGradient
-              colors={['#6200ee', '#9c27b0', '#e91e63']}
-              style={styles.gradientBox}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <Icon name="chat" size={24} color="white" style={styles.chatIcon} />
-              <Text style={styles.chatbotText}>
-                Talk to your Mental Health Assistant
+          {/* Current Mood Section - Simplified to show only basic sentiment */}
+          <View style={styles.moodSummaryContainer}>
+            <View style={styles.moodEmojiContainer}>
+              <Text style={styles.moodEmoji}>
+                {getMoodEmoji(currentMood.sentiment)}
               </Text>
-              <Text style={styles.chatbotSubtext}>
-                Share how you're feeling today
+            </View>
+            <View style={styles.moodTextContainer}>
+              <Text style={styles.moodLabel}>CURRENT MOOD</Text>
+              <Text style={styles.moodValue}>
+                {currentMood.sentiment.charAt(0).toUpperCase() + currentMood.sentiment.slice(1)}
               </Text>
-            </LinearGradient>
-          </TouchableOpacity>
-          
-          <Text style={styles.sectionTitle}>Today's Wellness Tip</Text>
-          <View style={styles.placeholderBox}>
-            <Text style={styles.placeholderText}>
-              Daily wellness tips and suggestions will be displayed in this section.
-            </Text>
-          </View>
-          
-          <Text style={styles.sectionTitle}>Your Current Mood</Text>
-          <View style={styles.moodContainer}>
-            <Text style={styles.moodEmoji}>{getMoodEmoji(currentMood.sentiment)}</Text>
-            <View style={styles.moodDetails}>
-              <Text style={styles.moodText}>
-                You're feeling <Text style={styles.moodHighlight}>{currentMood.sentiment}</Text>
+              <Text style={styles.moodDescription}>
+                Score: {currentMood.score ? currentMood.score.toFixed(2) : '0.00'}
               </Text>
               {currentMood.timestamp && (
-                <Text style={styles.moodTimestamp}>Last updated: {formatTimestamp(currentMood.timestamp)}</Text>
+                <Text style={styles.moodTimestamp}>{formatTimestamp(currentMood.timestamp)}</Text>
               )}
             </View>
           </View>
           
+          {/* Current Feeling Section - Show mapped specific feeling */}
+          {currentMood.mappedMood && (
+            <View style={styles.feelingSummaryContainer}>
+              <View style={styles.feelingHeader}>
+                <Icon name="emoji-emotions" size={20} color={primaryColor} />
+                <Text style={styles.feelingHeaderText}>CURRENT FEELING</Text>
+              </View>
+              <View style={styles.feelingContent}>
+                <View style={styles.feelingEmojiContainer}>
+                  <Text style={styles.feelingEmoji}>
+                    {getMappedMoodEmoji(currentMood.mappedMood)}
+                  </Text>
+                </View>
+                <Text style={styles.feelingText}>
+                  {currentMood.mappedMood.charAt(0).toUpperCase() + currentMood.mappedMood.slice(1)}
+                </Text>
+              </View>
+            </View>
+          )}
+          
+          {/* Talk to Assistant Card */}
+          <TouchableOpacity 
+            onPress={() => setShowChatbot(true)}
+            style={styles.chatbotCard}
+            activeOpacity={0.8}
+          >
+            <LinearGradient
+              colors={[primaryColor, secondaryColor]}
+              style={styles.gradientBox}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <View style={styles.cardContent}>
+                <View style={styles.cardIconContainer}>
+                  <Icon name="psychology" size={32} color="white" style={styles.chatIcon} />
+                </View>
+                <View style={styles.cardTextContainer}>
+                  <Text style={styles.cardTitle}>
+                    Talk to Your Mental Health Assistant
+                  </Text>
+                  <Text style={styles.cardSubtext}>
+                    Share how you're feeling today
+                  </Text>
+                </View>
+                <Icon name="chevron-right" size={28} color="white" />
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+          
+          {/* Wellness Tip Card */}
+          <View style={styles.wellnessTipCard}>
+            <View style={styles.cardHeader}>
+              <Icon name="lightbulb" size={20} color={primaryColor} />
+              <Text style={styles.cardHeaderText}>TODAY'S WELLNESS TIP</Text>
+            </View>
+            <Text style={styles.tipText}>{getRandomTip()}</Text>
+          </View>
+          
+          {/* Mood History Section */}
           {moodHistory.length > 0 && (
-            <>
-              <Text style={styles.sectionTitle}>Mood History</Text>
+            <View style={styles.moodHistorySection}>
+              <View style={styles.sectionTitleContainer}>
+                <Icon name="history" size={20} color={primaryColor} />
+                <Text style={styles.sectionTitle}>MOOD HISTORY</Text>
+              </View>
               <ScrollView 
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 style={styles.moodHistoryContainer}
+                contentContainerStyle={styles.moodHistoryContent}
+                snapToInterval={width * 0.35 + 10}
+                decelerationRate="fast"
               >
                 {moodHistory.map((mood, index) => (
                   <View key={index} style={styles.moodHistoryItem}>
                     <Text style={styles.historyEmoji}>{getMoodEmoji(mood.sentiment)}</Text>
-                    <Text style={styles.historyTimestamp}>{formatTimestamp(mood.timestamp)}</Text>
+                    <Text style={styles.historyMood}>
+                      {mood.sentiment.charAt(0).toUpperCase() + mood.sentiment.slice(1)}
+                    </Text>
+                    <Text style={styles.historyTimestamp}>
+                      {new Date(mood.timestamp).toLocaleDateString([], {month: 'short', day: 'numeric'})}
+                    </Text>
                   </View>
                 ))}
               </ScrollView>
-            </>
+            </View>
           )}
+          
+          {/* Resources Section
+          <View style={styles.resourcesSection}>
+            <View style={styles.sectionTitleContainer}>
+              <Icon name="help" size={20} color={primaryColor} />
+              <Text style={styles.sectionTitle}>HELPFUL RESOURCES</Text>
+            </View>
+            <View style={styles.resourceCard}>
+              <Icon name="call" size={24} color={primaryColor} />
+              <View style={styles.resourceTextContainer}>
+                <Text style={styles.resourceTitle}>Crisis Helpline</Text>
+                <Text style={styles.resourceDescription}>24/7 mental health support</Text>
+              </View>
+            </View>
+            <View style={styles.resourceCard}>
+              <Icon name="menu-book" size={24} color={primaryColor} />
+              <View style={styles.resourceTextContainer}>
+                <Text style={styles.resourceTitle}>Self-Help Library</Text>
+                <Text style={styles.resourceDescription}>Articles and exercises</Text>
+              </View>
+            </View>
+          </View> */}
         </View>
       </ScrollView>
 
@@ -622,40 +810,29 @@ const HomeScreen = () => {
         onRequestClose={() => setShowChatbot(false)}
       >
         <SafeAreaView style={styles.chatbotModalContainer}>
-          <View style={styles.chatHeader}>
+          <LinearGradient
+            colors={[primaryColor, secondaryColor]}
+            style={styles.chatHeader}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
             <TouchableOpacity onPress={() => setShowChatbot(false)} style={styles.backButton}>
               <Icon name="arrow-back" size={24} color="#fff" />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Mental Health Assistant</Text>
             <TouchableOpacity 
               onPress={() => {
-                console.log("Delete button clicked");
-                clearChatHistory();
-                // Alert.alert(
-                //   "Clear Chat",
-                //   "Are you sure you want to clear all chat history?",
-                //   [
-                //     { text: "Cancel", style: "cancel" },
-                //     { 
-                //       text: "Clear", 
-                //       style: "destructive", 
-                //       onPress: () => {
-                //         console.log("User confirmed chat deletion");
-                //         clearChatHistory();
-                //       }
-                //     }
-                //   ]
-                // );
+                clearChatHistory()
               }} 
               style={styles.clearButton}
             >
               <Icon name="delete" size={24} color="#fff" />
             </TouchableOpacity>
-          </View>
+          </LinearGradient>
 
           {loading && chatHistory.length <= 1 ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#6200ee" />
+              <ActivityIndicator size="large" color={primaryColor} />
               <Text style={styles.loadingText}>Loading your conversation...</Text>
             </View>
           ) : (
@@ -685,12 +862,12 @@ const HomeScreen = () => {
             
             <TouchableOpacity
               onPress={isListening ? stopListening : startListening}
-              style={styles.micButton}
+              style={[styles.micButton, isListening && styles.listeningButton]}
             >
               <Icon 
                 name={isListening ? "mic-off" : "mic"} 
                 size={24} 
-                color={isListening ? "#e91e63" : "#6200ee"} 
+                color={isListening ? "#fff" : primaryColor} 
               />
             </TouchableOpacity>
             
@@ -716,111 +893,328 @@ const HomeScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  // Home Screen Styles
+  // Main Container
   container: {
     flex: 1,
-    backgroundColor: '#f8f8f8',
+    backgroundColor: lightBackground,
   },
+  
+  // Header Styles
+  headerGradient: {
+    paddingTop: Platform.OS === 'ios' ? 50 : 70,
+    paddingBottom: 30,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+  },
+  headerContent: {
+    paddingHorizontal: 20,
+    alignItems: 'center',
+  },
+  greeting: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  title: {
+    color: '#fff',
+    fontSize: 28,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  subtitle: {
+    color: '#fff',
+    fontSize: 16,
+    opacity: 0.9,
+  },
+  
+  // Content Styles
   scrollContainer: {
     flex: 1,
   },
-  header: {
-    backgroundColor: '#6200ee',
-    padding: 20,
-    paddingTop: 60,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: 'white',
-  },
-  subtitle: {
-    fontSize: 16,
-    color: 'white',
-    marginTop: 5,
-  },
   contentContainer: {
     padding: 20,
+    paddingBottom: 40,
   },
-  sectionTitle: {
-    fontSize: 18,
+  
+  // Mood Summary Card
+  moodSummaryContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  moodEmojiContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: lightBackground,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 20,
+  },
+  moodEmoji: {
+    fontSize: 32,
+  },
+  moodTextContainer: {
+    flex: 1,
+  },
+  moodLabel: {
+    fontSize: 12,
     fontWeight: 'bold',
-    marginTop: 20,
-    marginBottom: 10,
+    color: '#999',
+    marginBottom: 4,
+  },
+  moodValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
+  },
+  moodDescription: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 2,
+  },
+  moodTimestamp: {
+    fontSize: 12,
+    color: '#999',
+  },
+  
+  // Current Feeling Section
+  feelingSummaryContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  feelingHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  feelingHeaderText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: primaryColor,
+    marginLeft: 8,
+  },
+  feelingContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  feelingEmojiContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(147, 112, 219, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  feelingEmoji: {
+    fontSize: 22,
+  },
+  feelingText: {
+    fontSize: 20,
+    fontWeight: 'bold',
     color: '#333',
   },
-  placeholderBox: {
-    backgroundColor: 'white',
-    borderRadius: 10,
+  
+  // Chatbot Card
+  chatbotCard: {
+    borderRadius: 16,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    overflow: 'hidden',
+  },
+  gradientBox: {
+    borderRadius: 16,
     padding: 20,
+  },
+  cardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cardIconContainer: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 15,
+  },
+  chatIcon: {
+    opacity: 0.9,
+  },
+  cardTextContainer: {
+    flex: 1,
+  },
+  cardTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 4,
+  },
+  cardSubtext: {
+    color: '#fff',
+    fontSize: 14,
+    opacity: 0.8,
+  },
+  
+  // Wellness Tip Card
+  wellnessTipCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  cardHeaderText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: primaryColor,
+    marginLeft: 8,
+  },
+  tipText: {
+    fontSize: 16,
+    color: '#333',
+    lineHeight: 24,
+  },
+  
+  // Mood History Section
+  moodHistorySection: {
+    marginBottom: 20,
+  },
+  sectionTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 15,
+  },
+  sectionTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: primaryColor,
+    marginLeft: 8,
+  },
+  moodHistoryContainer: {
+    flexDirection: 'row',
+  },
+  moodHistoryContent: {
+    paddingRight: 20,
+  },
+  moodHistoryItem: {
+    width: width * 0.35,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 15,
+    marginRight: 10,
+    alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
   },
-  placeholderText: {
-    color: '#666',
-    textAlign: 'center',
-  },
-  chatbotContainer: {
-    marginBottom: 15,
-  },
-  gradientBox: {
-    borderRadius: 10,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  chatIcon: {
+  historyEmoji: {
+    fontSize: 28,
     marginBottom: 8,
   },
-  chatbotText: {
-    color: 'white',
-    fontSize: 18,
+  historyMood: {
+    fontSize: 16,
     fontWeight: 'bold',
-    marginBottom: 4,
+    color: '#333',
+    marginBottom: 6,
   },
-  chatbotSubtext: {
-    color: 'white',
-    fontSize: 14,
-    opacity: 0.9,
+  historyTimestamp: {
+    fontSize: 12,
+    color: '#999',
   },
   
-  // Chatbot Modal Styles
-  chatbotModalContainer: {
-    flex: 1,
-    backgroundColor: '#f8f8f8',
+  // Resources Section
+  resourcesSection: {
+    marginBottom: 20,
   },
-  chatHeader: {
-    backgroundColor: '#6200ee',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    paddingTop: Platform.OS === 'android' ? 50 : 16,
-    elevation: 4,
+  resourceCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  resourceTextContainer: {
+    marginLeft: 15,
+    flex: 1,
+  },
+  resourceTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
+  },
+  resourceDescription: {
+    fontSize: 14,
+    color: '#666',
+  },
+  
+  // Chatbot Modal
+  chatbotModalContainer: {
+    flex: 1,
+    backgroundColor: lightBackground,
+  },
+  chatHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 20,
+    paddingHorizontal: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.05)',
+  },
+  backButton: {
+    padding: 5,
   },
   headerTitle: {
+    flex: 1,
     fontSize: 18,
     fontWeight: 'bold',
     color: '#fff',
-  },
-  backButton: {
-    padding: 8,
+    marginLeft: 10,
+    textAlign: 'center',
   },
   clearButton: {
-    padding: 8,
+    padding: 5,
   },
   loadingContainer: {
     flex: 1,
@@ -828,151 +1222,136 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loadingText: {
-    marginTop: 10,
+    marginTop: 15,
+    fontSize: 16,
     color: '#666',
   },
   chatContainer: {
-    padding: 16,
-    paddingBottom: 80,
+    paddingVertical: 20,
+    paddingHorizontal: 15,
   },
+  
+  // Message Styling
   messageContainer: {
     flexDirection: 'row',
-    marginBottom: 16,
-  },
-  userMessageContainer: {
-    justifyContent: 'flex-end',
+    marginBottom: 20,
+    alignItems: 'flex-start',
   },
   botMessageContainer: {
-    justifyContent: 'flex-start',
+    alignSelf: 'flex-start',
+  },
+  userMessageContainer: {
+    alignSelf: 'flex-end',
+    justifyContent: 'flex-end',
+  },
+  avatarContainer: {
+    marginRight: 10,
+  },
+  avatarGradient: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  userAvatarContainer: {
+    marginLeft: 10,
+  },
+  userAvatarGradient: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 12,
   },
   messageBubble: {
-    maxWidth: '80%',
+    maxWidth: width * 0.7,
+    borderRadius: 18,
     padding: 12,
-    borderRadius: 16,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 1,
-  },
-  userMessageBubble: {
-    backgroundColor: '#6200ee',
-    borderBottomRightRadius: 4,
+    paddingBottom: 15,
   },
   botMessageBubble: {
     backgroundColor: '#fff',
-    borderBottomLeftRadius: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.05)',
+  },
+  userMessageBubble: {
+    backgroundColor: primaryColor,
   },
   messageText: {
     fontSize: 16,
     lineHeight: 22,
   },
-  userMessageText: {
-    color: '#fff',
-  },
   botMessageText: {
     color: '#333',
   },
+  userMessageText: {
+    color: '#fff',
+  },
   speakButton: {
     position: 'absolute',
-    right: 8,
-    bottom: 8,
-    padding: 4,
-  },
-  inputContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
+    bottom: -8,
+    right: 5,
     backgroundColor: '#fff',
-    padding: 8,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  
+  // Input Area
+  inputContainer: {
+    flexDirection: 'row',
+    padding: 10,
+    backgroundColor: '#fff',
     borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
+    borderTopColor: 'rgba(0,0,0,0.05)',
+    alignItems: 'center',
   },
   input: {
     flex: 1,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: lightBackground,
     borderRadius: 20,
-    paddingHorizontal: 16,
+    paddingHorizontal: 15,
     paddingVertical: 10,
+    maxHeight: 120,
     fontSize: 16,
-    maxHeight: 100,
+    marginRight: 10,
   },
   micButton: {
-    padding: 12,
-  },
-  sendButton: {
-    backgroundColor: '#6200ee',
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: lightBackground,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 8,
+    marginRight: 10,
+  },
+  listeningButton: {
+    backgroundColor: accentColor,
+  },
+  sendButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: primaryColor,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   disabledButton: {
-    backgroundColor: '#c8c8c8',
-  },
-  moodContainer: {
-    backgroundColor: 'white',
-    borderRadius: 10,
-    padding: 16,
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  moodEmoji: {
-    fontSize: 40,
-    marginRight: 16,
-  },
-  moodDetails: {
-    flex: 1,
-  },
-  moodText: {
-    fontSize: 16,
-    color: '#333',
-  },
-  moodHighlight: {
-    fontWeight: 'bold',
-    color: '#6200ee',
-  },
-  moodTimestamp: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 4,
-  },
-  moodHistoryContainer: {
-    marginBottom: 20,
-  },
-  moodHistoryItem: {
-    backgroundColor: 'white',
-    borderRadius: 10,
-    padding: 16,
-    marginRight: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-    alignItems: 'center',
-    width: 100,
-  },
-  historyEmoji: {
-    fontSize: 30,
-    marginBottom: 8,
-  },
-  historyTimestamp: {
-    fontSize: 10,
-    color: '#666',
-    textAlign: 'center',
-  },
+    opacity: 0.5,
+  }
 });
 
 export default HomeScreen;
