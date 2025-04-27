@@ -53,13 +53,19 @@ MindMosaic is a comprehensive mental wellness mobile application built with **Re
 
 ```mermaid
 flowchart TD
-    Start --> Login/Signup
-    Login/Signup --> Dashboard
+    Start --> LoginSignup
+    LoginSignup --> Dashboard
+
     Dashboard --> MoodTracking
     Dashboard --> Chatbot
     Dashboard --> Activities
     Dashboard --> Community
-    MoodTracking --> SentimentAnalysis
-    Chatbot --> AIResponse
+    Dashboard --> WellnessTracker
+    Dashboard --> SOS
+
+    MoodTracking --> MoodAnalysis
+    Chatbot --> ChatSupport
     Activities --> ActivitySuggestions
-    Community --> ForumPosts
+    Community --> ForumInteraction
+    WellnessTracker --> SentimentCharts
+    SOS --> EmergencyHelp
