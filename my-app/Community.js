@@ -1,13 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, SafeAreaView, ActivityIndicator, Alert, Platform, Animated, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, FlatList, SafeAreaView, ActivityIndicator, Alert } from 'react-native';
 import { db, auth } from './firebase'; // your firebase config
-import { ref, onValue, off, push, set, update, query, orderByChild, limitToLast, remove } from 'firebase/database';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
-const randomNames = ["Fox", "Cat", "Wolf", "Panda", "Rabbit", "Tiger", "Owl", "Eagle", "Koala", "Lion"];
+import { ref, onValue, off, push, set, update, query, limitToLast, remove } from 'firebase/database';
 
-// Get screen dimensions for responsive design
-const { width, height } = Dimensions.get('window');
+const randomNames = ["Fox", "Cat", "Wolf", "Panda", "Rabbit", "Tiger", "Owl", "Eagle", "Koala", "Lion"];
 
 const Community = () => {
   const [tips, setTips] = useState([]);
@@ -16,23 +12,8 @@ const Community = () => {
   const [comments, setComments] = useState({}); // New state to store comments
   const [newComment, setNewComment] = useState({}); // New state to store typing comments
   const [showCommentBox, setShowCommentBox] = useState({}); // State to track which tips have comment box visible
-  const fadeAnim = useState(new Animated.Value(0))[0];
 
-  // Colors
-  const primaryColor = '#9370DB'; // Medium Purple
-  const secondaryColor = '#7B68EE'; // Medium Slate Blue
-  const accentColor = '#B19CD9'; // Light Purple
-  const darkAccent = '#6A5ACD'; // Slate Blue
-  const lightBackground = '#F8F7FF'; // Very Light Purple
-  const cardBackground = '#FFFFFF'; // White
-  
   useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 1000,
-      useNativeDriver: true,
-    }).start();
-
     const tipsRef = query(ref(db, 'tips'), limitToLast(100));
     const listener = onValue(
       tipsRef,
@@ -108,9 +89,14 @@ const Community = () => {
             text: 'Delete', 
             style: 'destructive',
             onPress: async () => {
-              const tipRef = ref(db, `tips/${tipId}`);
-              await remove(tipRef);
-              Alert.alert('Success', 'Tip deleted successfully.');
+              try {
+                const tipRef = ref(db, `tips/${tipId}`);
+                await remove(tipRef);
+                Alert.alert('Success', 'Tip deleted successfully.');
+              } catch (error) {
+                console.error('Error in deletion:', error);
+                Alert.alert('Error', 'Could not delete tip.');
+              }
             },
           },
         ],
@@ -174,59 +160,25 @@ const Community = () => {
     }
   };
 
-  const formatTimeAgo = (timestamp) => {
-    const now = Date.now();
-    const seconds = Math.floor((now - timestamp) / 1000);
-    
-    if (seconds < 60) return `${seconds}s ago`;
-    
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m ago`;
-    
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
-    
-    const days = Math.floor(hours / 24);
-    return `${days}d ago`;
-  };
-
-  const renderTip = ({ item, index }) => {
+  const renderTip = ({ item }) => {
     const liked = !!item.likedBy?.[auth.currentUser?.uid];
     const tipComments = item.comments ? Object.values(item.comments) : [];
     const isCommentBoxVisible = showCommentBox[item.id];
     const isMyTip = item.userId === auth.currentUser?.uid;
 
     return (
-      <Animated.View 
-        style={[
-          styles.tipCard,
-          {
-            opacity: fadeAnim,
-            transform: [{ translateY: fadeAnim.interpolate({
-              inputRange: [0, 1],
-              outputRange: [50, 0]
-            })}]
-          }
-        ]}
-      >
+      <View style={styles.tipCard}>
         <View style={styles.header}>
-          <View style={[styles.avatar, {backgroundColor: getColorForName(item.author)}]}>
+          <View style={styles.avatar}>
             <Text style={styles.avatarText}>{item.author[0]}</Text>
           </View>
-          <View style={styles.authorContainer}>
-            <Text style={styles.tipAuthor}>{item.author}</Text>
-            <Text style={styles.timeAgo}>{formatTimeAgo(item.timestamp)}</Text>
-          </View>
+          <Text style={styles.tipAuthor}>{item.author}</Text>
+          <Text style={styles.timeAgo}>
+            {Math.floor((Date.now() - item.timestamp) / 60000)} min ago
+          </Text>
           
           {/* Delete button - only visible for user's own tips */}
-          {isMyTip && (
-            <TouchableOpacity 
-              onPress={() => handleDeleteTip(item.id)}
-              style={styles.deleteButton}
-            >
-              <Ionicons name="close" size={16} color="#ff3b30" />
-            </TouchableOpacity>
-          )}
+          
         </View>
 
         <Text style={styles.tipContent}>{item.content}</Text>
@@ -236,11 +188,9 @@ const Community = () => {
             onPress={() => handleLike(item.id, item.likes, liked)}
             style={styles.actionButton}
           >
-            <Ionicons 
-              name={liked ? "heart" : "heart-outline"} 
-              size={22} 
-              color={liked ? "#ff3b30" : "#666"}
-            />
+            <Text style={[styles.heartIcon, liked && styles.likedHeart]}>
+              {liked ? '♥️' : '♡'}
+            </Text>
             <Text style={styles.actionCount}>{item.likes}</Text>
           </TouchableOpacity>
           
@@ -248,25 +198,18 @@ const Community = () => {
             onPress={() => toggleCommentBox(item.id)}
             style={styles.actionButton}
           >
-            <Ionicons name="chatbubble-outline" size={20} color="#666" />
+            <Text style={styles.commentIcon}>💬</Text>
             <Text style={styles.actionCount}>{tipComments.length}</Text>
           </TouchableOpacity>
         </View>
 
         {/* Comments Section */}
-        {tipComments.length > 0 && (
-          <View style={styles.commentsContainer}>
-            {tipComments.map((cmt, idx) => (
-              <View key={idx} style={styles.comment}>
-                <Ionicons name="person-circle-outline" size={18} color="#666" style={styles.commentIcon} />
-                <View style={styles.commentContent}>
-                  <Text style={styles.commentAuthor}>Anonymous</Text>
-                  <Text style={styles.commentText}>{cmt.text}</Text>
-                </View>
-              </View>
-            ))}
+        {tipComments.map((cmt, idx) => (
+          <View key={idx} style={styles.comment}>
+            <Text style={styles.commentAuthor}>Anonymous:</Text>
+            <Text style={styles.commentText}>{cmt.text}</Text>
           </View>
-        )}
+        ))}
 
         {/* Add Comment Input - Only shown when comment button is clicked */}
         {isCommentBoxVisible && (
@@ -278,19 +221,12 @@ const Community = () => {
               style={styles.commentInput}
             />
             <TouchableOpacity onPress={() => handleAddComment(item.id)} style={styles.commentButton}>
-              <Ionicons name="send" size={18} color="#fff" />
+              <Text style={{ color: '#fff' }}>Send</Text>
             </TouchableOpacity>
           </View>
         )}
-      </Animated.View>
+      </View>
     );
-  };
-
-  // Get a consistent color based on the name
-  const getColorForName = (name) => {
-    const colors = ['#FFD6E0', '#FFEFCF', '#D1F0FF', '#C3E5AE', '#D4C1EC', '#FFCBC1', '#C5D8FF'];
-    const index = name.charCodeAt(0) % colors.length;
-    return colors[index];
   };
 
   if (loading) {
@@ -302,35 +238,22 @@ const Community = () => {
   }
 
   return (
-    <View style={styles.container}>
-      <LinearGradient
-        colors={[primaryColor, secondaryColor, darkAccent]}
-        style={styles.headerGradient}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-      >
-        <View style={styles.headerContent}>
-          <Text style={styles.title}>Community</Text>
-          <Text style={styles.subtitle}>Share and discover wellness tips</Text>
-        </View>
-      </LinearGradient>
+    <SafeAreaView style={styles.container}>
+      <View style={styles.pageHeader}>
+        <Text style={styles.pageTitle}>Community</Text>
+        <Text style={styles.pageSubtitle}>Share and discover wellness tips</Text>
+      </View>
       
       <View style={styles.inputContainer}>
         <TextInput
           value={newTip}
           onChangeText={setNewTip}
-          placeholder="Share your wellness tip..."
+          placeholder="Share your tip..."
           style={styles.input}
           multiline
-          placeholderTextColor="#A8A8A8"
         />
-        <TouchableOpacity 
-          onPress={handleAddTip} 
-          style={styles.shareButton}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="send" size={18} color="white" style={{marginRight: 8}} />
-          <Text style={styles.shareText}>Share Tip</Text>
+        <TouchableOpacity onPress={handleAddTip} style={styles.shareButton}>
+          <Text style={styles.shareText}>Post Tip</Text>
         </TouchableOpacity>
       </View>
       
@@ -338,10 +261,9 @@ const Community = () => {
         data={tips}
         keyExtractor={item => item.id}
         renderItem={renderTip}
-        contentContainerStyle={styles.listContainer}
-        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ padding: 16 }}
       />
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -350,209 +272,149 @@ const styles = StyleSheet.create({
     flex: 1, 
     backgroundColor: '#f8f4ff' 
   },
-  headerGradient: {
-    paddingTop: Platform.OS === 'ios' ? 60 : 70,
-    paddingBottom: 25,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
+  pageHeader: {
+    backgroundColor: '#6200ee',
+    padding: 20,
+    paddingTop: 60,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
   },
-  headerContent: {
-    paddingHorizontal: 20,
-    alignItems: 'center',
-  },
-  title: {
-    color: '#fff',
-    fontSize: 28,
+  pageTitle: {
+    fontSize: 24,
     fontWeight: 'bold',
-    marginBottom: 6,
+    color: 'white',
   },
-  subtitle: {
-    color: '#fff',
+  pageSubtitle: {
     fontSize: 16,
-    opacity: 0.9,
+    color: 'white',
+    marginTop: 5,
   },
   inputContainer: { 
     padding: 16,
     marginTop: 10,
-    marginHorizontal: 16,
-    backgroundColor: 'white',
-    borderRadius: 12,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
   },
   input: { 
-    backgroundColor: '#f9f9f9', 
-    padding: 14, 
+    backgroundColor: '#fff', 
+    padding: 12, 
     borderRadius: 8, 
-    minHeight: 80,
-    borderWidth: 1,
-    borderColor: '#e5e5e5',
-    fontSize: 16,
+    minHeight: 80 
   },
   shareButton: { 
-    marginTop: 12, 
+    marginTop: 10, 
     backgroundColor: '#9370DB', 
-    padding: 14, 
+    padding: 12, 
     borderRadius: 8, 
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    elevation: 2,
-    shadowColor: '#9370DB',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 2,
+    alignItems: 'center' 
   },
   shareText: { 
     color: '#fff', 
-    fontWeight: 'bold', 
-    fontSize: 16
-  },
-  listContainer: { 
-    padding: 16, 
-    paddingBottom: 80,
+    fontWeight: 'bold' 
   },
   tipCard: { 
     backgroundColor: '#fff', 
-    padding: 18, 
-    borderRadius: 14, 
-    marginBottom: 16,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    padding: 16, 
+    borderRadius: 8, 
+    marginBottom: 12 
   },
   header: { 
     flexDirection: 'row', 
     alignItems: 'center', 
-    marginBottom: 12 
+    marginBottom: 8 
   },
   avatar: { 
-    width: 42, 
-    height: 42, 
-    borderRadius: 21, 
+    backgroundColor: '#d9d6f6', 
+    width: 32, 
+    height: 32, 
+    borderRadius: 16, 
     alignItems: 'center', 
     justifyContent: 'center' 
   },
   avatarText: { 
     fontWeight: 'bold', 
-    color: '#5e48c4',
-    fontSize: 18,
-  },
-  authorContainer: {
-    marginLeft: 12,
-    flex: 1,
+    color: '#5e48c4' 
   },
   tipAuthor: { 
     fontWeight: 'bold', 
-    fontSize: 16,
-    color: '#333',
+    marginLeft: 8 
   },
   timeAgo: { 
+    marginLeft: 'auto', 
     fontSize: 12, 
-    color: '#888',
+    color: 'gray', 
+    marginRight: 8 
   },
-  deleteButton: { 
-    width: 32, 
-    height: 32, 
-    borderRadius: 16, 
-    backgroundColor: '#f0f0f0',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+
+
   tipContent: { 
-    marginBottom: 16, 
-    fontSize: 16,
-    lineHeight: 22,
-    color: '#333',
+    marginBottom: 8, 
+    marginTop: 4 
   },
   actions: { 
     flexDirection: 'row', 
     alignItems: 'center', 
+    marginTop: 8,
     borderTopWidth: 1,
     borderTopColor: '#f0f0f0',
-    paddingTop: 12,
+    paddingTop: 8
   },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginRight: 24,
-    paddingVertical: 8,
+    marginRight: 20,
+    paddingVertical: 5,
+  },
+  heartIcon: {
+    fontSize: 20,
+    color: '#999',
+    marginRight: 4
+  },
+  likedHeart: {
+    color: '#ff3b30',
+  },
+  commentIcon: {
+    fontSize: 18,
+    color: '#999',
+    marginRight: 4
   },
   actionCount: {
     color: '#666',
-    fontSize: 14,
-    marginLeft: 4,
-    fontWeight: '500',
-  },
-  commentsContainer: {
-    marginTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-    paddingTop: 8,
+    fontSize: 14
   },
   comment: { 
     flexDirection: 'row', 
-    alignItems: 'flex-start', 
-    backgroundColor: '#f9f9f9', 
-    padding: 10, 
-    borderRadius: 10, 
-    marginTop: 8,
-  },
-  commentIcon: {
-    marginRight: 8,
-    marginTop: 2,
-  },
-  commentContent: {
-    flex: 1,
+    alignItems: 'center', 
+    backgroundColor: '#f0edff', 
+    padding: 8, 
+    borderRadius: 8, 
+    marginTop: 6 
   },
   commentAuthor: { 
     fontWeight: 'bold', 
-    fontSize: 13,
-    color: '#555',
+    marginRight: 4 
   },
   commentText: { 
-    fontSize: 14, 
-    color: '#333',
+    flexShrink: 1 
   },
   commentInputRow: { 
     flexDirection: 'row', 
-    marginTop: 12,
-    alignItems: 'center',
+    marginTop: 8 
   },
   commentInput: { 
     flex: 1, 
-    backgroundColor: '#f5f5f5', 
-    padding: 10, 
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    paddingHorizontal: 16,
+    backgroundColor: '#f0edff', 
+    padding: 8, 
+    borderRadius: 8 
   },
   commentButton: { 
     backgroundColor: '#9370DB', 
-    padding: 10,
-    width: 40,
-    height: 40, 
-    borderRadius: 20,
+    padding: 10, 
     marginLeft: 8, 
-    justifyContent: 'center',
-    alignItems: 'center',
+    borderRadius: 8 
   },
   loading: { 
     flex: 1, 
     justifyContent: 'center', 
-    alignItems: 'center', 
-    backgroundColor: '#f8f4ff',
+    alignItems: 'center' 
   },
 });
 

@@ -7,7 +7,7 @@ import { LineChart } from 'react-native-chart-kit';
 
 // Get screen dimensions
 const { width: initialWidth, height: initialHeight } = Dimensions.get('window');
-const primaryColor = '#9370DB'; // Match the app theme
+const primaryColor = '#9370DB';
 
 // Time period options
 const TIME_PERIODS = {
@@ -16,52 +16,39 @@ const TIME_PERIODS = {
   MONTHLY: 'monthly'
 };
 
-// Default emergency contacts
-const defaultContacts = [];
-
 const ProfileScreen = () => {
   const [loading, setLoading] = useState(true);
   const [moodHistory, setMoodHistory] = useState([]);
   const [timePeriod, setTimePeriod] = useState(TIME_PERIODS.CURRENT);
   const [sosSending, setSosSending] = useState(false);
-  const [userStreak, setUserStreak] = useState(0); // Add state for streak
-  const [userPoints, setUserPoints] = useState(0); // Add state for mindfulness points
-  
-  // Add responsive dimensions state
+  const [userStreak, setUserStreak] = useState(0);
+  const [userPoints, setUserPoints] = useState(0);
   const [dimensions, setDimensions] = useState({ 
     window: { width: initialWidth, height: initialHeight },
     screen: Dimensions.get('screen')
   });
-  
-  // Emergency support states
   const [contacts, setContacts] = useState([]);
   const [newContactName, setNewContactName] = useState('');
   const [newContactNumber, setNewContactNumber] = useState('');
   const [showContactForm, setShowContactForm] = useState(false);
-  
-  // Add state for location and SOS status
   const [currentLocation, setCurrentLocation] = useState(null);
   const [isSendingSOS, setIsSendingSOS] = useState(false);
   
-  // Add event listener for screen dimension changes
   useEffect(() => {
     const subscription = Dimensions.addEventListener('change', ({ window, screen }) => {
       setDimensions({ window, screen });
     });
-    
     return () => subscription?.remove();
   }, []);
   
-  // Load mood history when component mounts
   useEffect(() => {
     loadMoodHistory();
+    fetchUserStats();
   }, []);
   
-  // Load emergency contacts
   useEffect(() => {
     if (!auth.currentUser) return;
     
-    // Load user's emergency contacts
     const contactsRef = ref(db, `users/${auth.currentUser.uid}/emergencyContacts`);
     const listener = onValue(contactsRef, (snapshot) => {
       const data = snapshot.val();
@@ -71,8 +58,6 @@ const ProfileScreen = () => {
           ...data[key],
           default: false
         }));
-        
-        // Only set user contacts without default contacts
         setContacts(userContacts);
       } else {
         setContacts([]);
@@ -84,7 +69,6 @@ const ProfileScreen = () => {
     };
   }, []);
   
-  // Load mood history from Firebase
   const loadMoodHistory = () => {
     const currentUser = auth.currentUser;
     if (!currentUser) return;
@@ -106,7 +90,20 @@ const ProfileScreen = () => {
     }, { onlyOnce: true });
   };
   
-  // Convert sentiment to numerical value for chart
+  const fetchUserStats = () => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+    
+    const userRef = ref(db, `users/${currentUser.uid}`);
+    onValue(userRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const userData = snapshot.val();
+        setUserStreak(userData.streak || 0);
+        setUserPoints(userData.points || 0);
+      }
+    });
+  };
+
   const getSentimentValue = (sentiment) => {
     switch (sentiment) {
       case 'positive': return 1;
@@ -116,103 +113,189 @@ const ProfileScreen = () => {
     }
   };
   
-  // Format date for chart labels
   const formatDate = (timestamp) => {
     const date = new Date(timestamp);
     return `${date.getMonth() + 1}/${date.getDate()}`;
   };
   
-  // Prepare chart data
-  const prepareChartData = () => {
-    switch(timePeriod) {
-      case TIME_PERIODS.CURRENT:
-        return {
-          labels: moodHistory.map(mood => formatDate(mood.timestamp)),
-          datasets: [
-            {
-              data: moodHistory.map(mood => getSentimentValue(mood.sentiment)),
+  const renderChartContent = () => {
+    const containerPadding = 40;
+    const chartWidth = Math.min(dimensions.window.width - containerPadding, 500);
+    const chartHeight = Math.min(180, dimensions.window.height * 0.25);
+    
+    if (loading) {
+      return (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={primaryColor} />
+          <Text style={styles.loadingText}>Loading your mood history...</Text>
+        </View>
+      );
+    }
+    
+    if (timePeriod === TIME_PERIODS.CURRENT && moodHistory.length === 0) {
+      return (
+        <Text style={styles.noDataText}>
+          No mood data available yet. Chat with the assistant to track your mood over time.
+        </Text>
+      );
+    }
+    
+    const prepareChartData = () => {
+      switch(timePeriod) {
+        case TIME_PERIODS.CURRENT:
+          const maxLabels = Math.floor(chartWidth / 60);
+          const step = Math.max(1, Math.ceil(moodHistory.length / maxLabels));
+          
+          const filteredLabels = [];
+          const filteredData = [];
+          
+          moodHistory.forEach((mood, i) => {
+            if (i % step === 0 || i === moodHistory.length - 1) {
+              filteredLabels.push(formatDate(mood.timestamp));
+              filteredData.push(getSentimentValue(mood.sentiment));
+            }
+          });
+          
+          return {
+            labels: filteredLabels,
+            datasets: [{
+              data: filteredData,
               color: (opacity = 1) => primaryColor,
               strokeWidth: 2
-            }
-          ],
-          legend: ["Mood"]
-        };
-      case TIME_PERIODS.WEEKLY:
-        // Placeholder for weekly data (empty chart)
-        return {
-          labels: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-          datasets: [
-            {
+            }],
+            legend: ["Mood"]
+          };
+          
+        case TIME_PERIODS.WEEKLY:
+          return {
+            labels: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+            datasets: [{
               data: [0, 0, 0, 0, 0, 0, 0],
               color: (opacity = 1) => primaryColor,
               strokeWidth: 2
-            }
-          ],
-          legend: ["Weekly Mood"]
-        };
-      case TIME_PERIODS.MONTHLY:
-        // Placeholder for monthly data (empty chart)
-        return {
-          labels: ["Week 1", "Week 2", "Week 3", "Week 4"],
-          datasets: [
-            {
+            }],
+            legend: ["Weekly Mood"]
+          };
+          
+        case TIME_PERIODS.MONTHLY:
+          return {
+            labels: ["Week 1", "Week 2", "Week 3", "Week 4"],
+            datasets: [{
               data: [0, 0, 0, 0],
               color: (opacity = 1) => primaryColor,
               strokeWidth: 2
-            }
-          ],
-          legend: ["Monthly Mood"]
-        };
-      default:
-        return {
-          labels: [],
-          datasets: [{ data: [] }],
-          legend: [""]
-        };
-    }
-  };
-  
-  const chartConfig = {
-    backgroundGradientFrom: "#ffffff",
-    backgroundGradientTo: "#ffffff",
-    decimalPlaces: 0,
-    color: (opacity = 1) => `rgba(147, 112, 219, ${opacity})`,
-    labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-    style: {
-      borderRadius: 16
-    },
-    propsForDots: {
-      r: "5",
-      strokeWidth: "2",
-      stroke: primaryColor
-    },
-    propsForLabels: {
-      fontSize: 10,
-      fontWeight: '500',
-      textLength: 4,
-      ellipsizeMode: 'clip'
-    },
-    propsForBackgroundLines: {
-      strokeDasharray: "",
-      stroke: "#e0e0e0", // Light gray color for grid lines
-      strokeWidth: 1
-    },
-    formatYLabel: (value) => {
-      if (value === 1) return "Positive";
-      if (value === 0) return "Neutral";
-      if (value === -1) return "Negative";
-      return "";
-    },
-    horizontalLabelRotation: 45,
-    verticalLabelRotation: 0,
-    formatXLabel: (label) => {
-      if (label && label.length > 5) {
-        return label.substring(0, 5);
+            }],
+            legend: ["Monthly Mood"]
+          };
+        default:
+          return {
+            labels: [],
+            datasets: [{ data: [] }],
+            legend: [""]
+          };
       }
-      return label;
+    };
+    
+    const chartConfig = {
+      backgroundGradientFrom: "#ffffff",
+      backgroundGradientTo: "#ffffff",
+      decimalPlaces: 0,
+      color: (opacity = 1) => `rgba(147, 112, 219, ${opacity})`,
+      labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+      style: {
+        borderRadius: 16
+      },
+      propsForDots: {
+        r: "6",
+        strokeWidth: "2",
+        stroke: primaryColor
+      },
+      propsForLabels: {
+        fontSize: 10,
+        fontWeight: '500',
+        textAlign: 'center'
+      },
+      propsForBackgroundLines: {
+        strokeDasharray: "",
+        stroke: "#e0e0e0",
+        strokeWidth: 1
+      },
+      formatYLabel: (value) => {
+        if (value === 1) return "+";
+        if (value === 0) return "0";
+        if (value === -1) return "-";
+        return "";
+      },
+      horizontalLabelRotation: 0,
+      verticalLabelRotation: 0,
+      formatXLabel: (label) => {
+        if (label && label.includes('/')) {
+          return label.split('/')[1];
+        }
+        return label;
+      }
+    };
+    
+    const renderChart = (data) => (
+      <View style={styles.chartWrapper}>
+        <LineChart
+          data={data}
+          width={chartWidth}
+          height={chartHeight}
+          chartConfig={chartConfig}
+          withHorizontalLabels={true}
+          withVerticalLabels={true}
+          withHorizontalLines={true}
+          withVerticalLines={false}
+          withDots={true}
+          withShadow={false}
+          bezier={true}
+          style={{
+            marginVertical: 8,
+            borderRadius: 16,
+            paddingRight: 0,
+            paddingLeft: 0
+          }}
+          fromZero={false}
+          segments={3}
+          yAxisLabel=""
+          yAxisSuffix=""
+        />
+      </View>
+    );
+    
+    if (timePeriod === TIME_PERIODS.WEEKLY) {
+      return (
+        <View style={styles.chartWrapper}>
+          {renderChart(prepareChartData())}
+          <Text style={styles.noDataText}>
+            Weekly mood history is not available yet.
+          </Text>
+        </View>
+      );
     }
+    
+    if (timePeriod === TIME_PERIODS.MONTHLY) {
+      return (
+        <View style={styles.chartWrapper}>
+          {renderChart(prepareChartData())}
+          <Text style={styles.noDataText}>
+            Monthly mood history is not available yet.
+          </Text>
+        </View>
+      );
+    }
+    
+    return (
+      <View style={styles.chartWrapper}>
+        {renderChart(prepareChartData())}
+        <Text style={styles.chartDescription}>
+          This chart shows your mood patterns based on your conversations with the mental health assistant.
+        </Text>
+      </View>
+    );
   };
-  
+
   const handleSignOut = async () => {
     try {
       await signOut(auth);
@@ -221,7 +304,6 @@ const ProfileScreen = () => {
     }
   };
 
-  // Emergency Support Functions
   const handleAddContact = async () => {
     if (!newContactName.trim() || !newContactNumber.trim()) {
       Alert.alert('Input Required', 'Please enter both name and number');
@@ -252,7 +334,6 @@ const ProfileScreen = () => {
   };
 
   const handleRemoveContact = async (contactId, isDefault) => {
-    // Don't allow removing default contacts
     if (isDefault) {
       Alert.alert('Cannot Remove', 'Default emergency contacts cannot be removed');
       return;
@@ -282,11 +363,7 @@ const ProfileScreen = () => {
     }
   };
   
-  // Simplified SOS function without SMS functionality
   const handleSOS = () => {
-    console.log('SOS button pressed, contacts:', contacts.length);
-    
-    // Show feedback even if there's no contacts
     if (contacts.length === 0) {
       Alert.alert(
         'No Emergency Contacts', 
@@ -318,7 +395,6 @@ const ProfileScreen = () => {
           text: 'Call Now',
           style: 'destructive',
           onPress: () => {
-            console.log('Initiating emergency call');
             callEmergencyContact();
           },
         },
@@ -327,15 +403,12 @@ const ProfileScreen = () => {
     );
   };
   
-  // Simplified emergency handling - only makes calls, no SMS
   const callEmergencyContact = async () => {
     setSosSending(true);
     
     try {
-      // Log SOS event to database
       if (auth.currentUser) {
         try {
-          console.log('Logging SOS event to database');
           const sosRef = ref(db, `users/${auth.currentUser.uid}/sosHistory`);
           const newSosRef = push(sosRef);
           await set(newSosRef, {
@@ -348,11 +421,9 @@ const ProfileScreen = () => {
         }
       }
       
-      // Call first contact
       if (contacts.length > 0) {
         try {
           const firstContact = contacts[0];
-          console.log('Calling emergency contact:', firstContact.name);
           await Linking.openURL(`tel:${firstContact.number}`);
           
           Alert.alert(
@@ -369,7 +440,6 @@ const ProfileScreen = () => {
       console.error('Error in emergency function:', error);
       Alert.alert('Error', 'Failed to complete emergency procedure');
     } finally {
-      console.log('Emergency process completed');
       setSosSending(false);
       setIsSendingSOS(false);
     }
@@ -400,143 +470,12 @@ const ProfileScreen = () => {
     </View>
   );
 
-  const renderChartContent = () => {
-    if (loading) {
-      return (
-        <View style={styles.chartLoadingContainer}>
-          <ActivityIndicator size="large" color="#51987" />
-          <Text style={styles.chartSubtitle}>Loading mood data...</Text>
-        </View>
-      );
-    }
-
-    if (moodHistory.length === 0) {
-      return (
-        <View style={styles.chartEmptyContainer}>
-          <Text style={styles.chartEmptyText}>😊</Text>
-          <Text style={styles.chartSubtitle}>No mood data available yet</Text>
-          <TouchableOpacity 
-            style={styles.refreshButton}
-            onPress={loadMoodHistory}
-          >
-            <Text style={styles.refreshButtonText}>Refresh Data</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
-
-    const chartData = {
-      labels: moodHistory.map(mood => formatDate(mood.timestamp)),
-      datasets: [
-        {
-          data: moodHistory.map(mood => getSentimentValue(mood.sentiment)),
-          color: (opacity = 1) => `rgba(81, 152, 114, ${opacity})`, // Green with opacity
-          strokeWidth: 3,
-          withDots: true,
-          withGradient: true,
-          fillShadowGradient: '#51987',
-          fillShadowGradientOpacity: 0.25
-        }
-      ],
-      legend: ["Mood Trends"]
-    };
-
-    const enhancedChartConfig = {
-      backgroundColor: '#ffffff',
-      backgroundGradientFrom: '#ffffff',
-      backgroundGradientTo: '#ffffff',
-      decimalPlaces: 0,
-      color: (opacity = 1) => `rgba(81, 152, 114, ${opacity})`,
-      labelColor: (opacity = 1) => `rgba(51, 51, 51, ${opacity})`,
-      style: {
-        borderRadius: 16,
-      },
-      strokeWidth: 2,
-      barPercentage: 0.5,
-      useShadowColorFromDataset: true,
-      propsForDots: {
-        r: '5',
-        strokeWidth: '2',
-        stroke: '#ffffff',
-      },
-      propsForBackgroundLines: {
-        stroke: '#e3e3e3',
-      },
-      formatYLabel: (value) => {
-        if (value === 1) return "Positive";
-        if (value === 0) return "Neutral";
-        if (value === -1) return "Negative";
-        return "";
-      },
-    };
-
-    return (
-      <View style={styles.chartContainer}>
-        <View style={styles.chartHeader}>
-          <Text style={styles.chartTitle}>Your Mood Over Time</Text>
-          <Text style={styles.chartSubtitle}>Last 7 entries</Text>
-        </View>
-        
-        <View style={styles.chartWrapper}>
-          <LineChart
-            data={chartData}
-            width={Dimensions.get('window').width - 60}
-            height={220}
-            chartConfig={enhancedChartConfig}
-            bezier
-            style={styles.chart}
-            withVerticalLines={true}
-            withHorizontalLines={true}
-            withInnerLines={true}
-            withOuterLines={true}
-            withShadow={false}
-          />
-          <View style={styles.chartLegend}>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: '#51987' }]} />
-              <Text style={styles.legendText}>Positive</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: '#FFA500' }]} />
-              <Text style={styles.legendText}>Neutral</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: '#FF6B6B' }]} />
-              <Text style={styles.legendText}>Negative</Text>
-            </View>
-          </View>
-        </View>
-      </View>
-    );
-  };
-
-  // Add a new useEffect to fetch user streak and mindfulness points from Firebase
-  useEffect(() => {
-    fetchUserStats();
-  }, []);
-
-  // Create a function to fetch user streak and mindfulness points
-  const fetchUserStats = () => {
-    const currentUser = auth.currentUser;
-    if (!currentUser) return;
-    
-    const userRef = ref(db, `users/${currentUser.uid}`);
-    onValue(userRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const userData = snapshot.val();
-        setUserStreak(userData.streak || 0);
-        setUserPoints(userData.points || 0);
-      }
-    });
-  };
-
   return (
     <SafeAreaView style={styles.container}>
       <View style={[styles.header, { paddingTop: Platform.OS === 'ios' ? 10 : 60 }]}>
         <Text style={styles.title}>My Profile</Text>
         <Text style={styles.subtitle}>Manage your account and preferences</Text>
         
-        {/* SOS Button with updated styling */}
         <TouchableOpacity 
           style={[
             styles.sosButton, 
@@ -544,7 +483,7 @@ const ProfileScreen = () => {
               top: Platform.OS === 'ios' ? 10 : 60,
               right: dimensions.window.width * 0.05
             },
-            isSendingSOS && styles.sosButtonActive // Add pulsing effect when sending
+            isSendingSOS && styles.sosButtonActive
           ]}
           onPress={handleSOS}
           disabled={sosSending || isSendingSOS}
@@ -569,7 +508,6 @@ const ProfileScreen = () => {
             <Text style={styles.userEmail}>{auth.currentUser?.email}</Text>
           </View>
           
-          {/* Add Mindfulness Statistics Section */}
           <View style={styles.statsContainer}>
             <Text style={styles.statsTitle}>Mindfulness Statistics</Text>
             
@@ -600,9 +538,7 @@ const ProfileScreen = () => {
             </Text>
           </View>
           
-          
-          
-          <Text style={styles.sectionTitle}>Wellness Progress</Text>
+          <Text style={styles.sectionTitle}>Mood Tracker</Text>
           <View style={styles.chartContainer}>
             <View style={styles.timeFilterContainer}>
               <TouchableOpacity 
@@ -650,7 +586,6 @@ const ProfileScreen = () => {
             {renderChartContent()}
           </View>
           
-          {/* Emergency Support Section */}
           <Text style={styles.sectionTitle}>Emergency Support</Text>
           <View style={styles.emergencyContainer}>
             <View style={styles.emergencyHeader}>
@@ -740,7 +675,7 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'ios' ? 50 : 60,
     borderBottomLeftRadius: 20,
     borderBottomRightRadius: 20,
-    position: 'relative', // For positioning SOS button
+    position: 'relative',
   },
   title: {
     fontSize: Math.min(24, Dimensions.get('window').width * 0.06),
@@ -794,133 +729,85 @@ const styles = StyleSheet.create({
     marginBottom: '2.5%',
     color: '#333',
   },
-  placeholderBox: {
+  chartContainer: {
     backgroundColor: 'white',
     borderRadius: 10,
-    padding: 20,
+    padding: 15,
     marginBottom: 15,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
+    alignItems: 'center',
   },
-  placeholderText: {
-    color: '#666',
-    textAlign: 'center',
-  },
-  chartContainer: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 20,
-    marginHorizontal: 20,
-    marginVertical: 15,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  chartHeader: {
+  timeFilterContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
     marginBottom: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+    paddingBottom: 10,
+  },
+  timeFilterButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  activeTimeFilterButton: {
+    backgroundColor: primaryColor + '20',
+  },
+  timeFilterText: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  activeTimeFilterText: {
+    color: primaryColor,
+    fontWeight: 'bold',
   },
   chartTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333333',
-    marginBottom: 4,
-  },
-  chartSubtitle: {
-    fontSize: 14,
-    color: '#666666',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 15,
+    textAlign: 'center',
+    color: '#333',
   },
   chartWrapper: {
     alignItems: 'center',
-    marginBottom: 15,
+    justifyContent: 'center',
+    paddingVertical: 10,
+    overflow: 'hidden',
+    marginHorizontal: -15,
   },
   chart: {
     marginVertical: 8,
     borderRadius: 16,
+    alignSelf: 'center',
+    paddingBottom: 10,
   },
-  chartLegend: {
-    flexDirection: 'row',
-    justifyContent: 'center',
+  chartDescription: {
+    fontSize: Math.min(12, Dimensions.get('window').width * 0.035),
+    color: '#666',
+    textAlign: 'center',
     marginTop: 10,
+    paddingHorizontal: 10,
+    maxWidth: '90%',
   },
-  legendItem: {
-    flexDirection: 'row',
+  loadingContainer: {
+    padding: 20,
     alignItems: 'center',
-    marginHorizontal: 10,
   },
-  legendDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
+  loadingText: {
+    marginTop: 10,
+    color: '#666',
   },
-  legendText: {
-    fontSize: 12,
-    color: '#666666',
-  },
-  chartLoadingContainer: {
-    backgroundColor: '#fff',
-    margin: 16,
-    marginTop: 20,
-    borderRadius: 16,
-    padding: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#9370DB',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 5,
-    borderWidth: 1,
-    borderColor: '#e8e8f0',
-    minHeight: 180,
-  },
-  chartEmptyContainer: {
-    backgroundColor: '#fff',
-    margin: 16,
-    marginTop: 20,
-    borderRadius: 16,
-    padding: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#9370DB',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 5,
-    borderWidth: 1,
-    borderColor: '#e8e8f0',
-    minHeight: 180,
-  },
-  chartEmptyText: {
-    fontSize: 44,
-    marginBottom: 16,
-  },
-  refreshButton: {
-    backgroundColor: '#9370DB',
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 25,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#9370DB',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    elevation: 3,
-  },
-  refreshButtonText: {
-    color: '#fff',
+  noDataText: {
     fontSize: 14,
-    fontWeight: '600',
+    color: '#666',
+    textAlign: 'center',
+    fontStyle: 'italic',
+    paddingVertical: 15,
   },
   signOutButton: {
     backgroundColor: '#f44336',
@@ -934,7 +821,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 16,
   },
-  // Emergency Support Styles
   emergencyContainer: {
     backgroundColor: 'white',
     borderRadius: 10,
@@ -1080,7 +966,6 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 12,
   },
-  // Enhanced SOS button styles
   sosButton: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 50 : 60,
@@ -1103,14 +988,13 @@ const styles = StyleSheet.create({
     zIndex: 100,
   },
   sosButtonActive: {
-    backgroundColor: '#d32f2f', // Darker red when active
+    backgroundColor: '#d32f2f',
   },
   sosButtonText: {
     color: 'white',
     fontWeight: 'bold',
     fontSize: Math.min(16, Dimensions.get('window').width * 0.04),
   },
-  // Add these new styles to the StyleSheet object
   statsContainer: {
     backgroundColor: 'white',
     borderRadius: 15,
@@ -1140,7 +1024,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8f8f8',
     borderRadius: 12,
     padding: 15,
-    flex: 0.48, // Slightly less than half to account for margin
+    flex: 0.48,
     shadowColor: '#9370DB',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -1178,31 +1062,6 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textAlign: 'center',
     marginTop: 10,
-  },
-  timeFilterContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-    paddingBottom: 10,
-  },
-  timeFilterButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  activeTimeFilterButton: {
-    backgroundColor: primaryColor + '20', // 20% opacity
-  },
-  timeFilterText: {
-    fontSize: 14,
-    color: '#666',
-    fontWeight: '500',
-  },
-  activeTimeFilterText: {
-    color: primaryColor,
-    fontWeight: 'bold',
   },
 });
 
